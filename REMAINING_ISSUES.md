@@ -10,6 +10,7 @@
 6. **Medium — AI explanations are not ground truth.** Business Intelligence and Personalization use one model call for narrative only. BI facts and ranking scores remain computed locally; review the AI text against the displayed fields.
 7. **Medium — news collection source coverage.** One manual live CBR RSS fetch completed and wrote only to the clone-local collector database. The second allowlisted source and its live outage behavior were not exercised; injected failure fixtures cover the error path without changing source data.
 8. **Medium — personalization evaluation.** Local profiles and archive ranking work, but no independent judgement set exists, so ranking quality metrics are not reported. The same evidence gaps can yield equal scores across companies.
+9. **Medium — Product live model output not verified.** The client product API now reports `aiMode=external` after receiving the existing Windows `ALFA_ALLOW_EXTERNAL_AI` opt-in, but no post-opt-in research/chat request was sent in this allowance. Its live answer quality remains unverified.
 
 ## Architecture and operations
 
@@ -22,6 +23,6 @@
 
 - Source CSVs, the news SQLite archive, and bank knowledge JSON were opened read-only and were not copied or changed.
 - Existing source-project history was not cleared. The browser E2E added local-demo research/chat entries only to the staging clone's history store.
-- External AI is enabled through the existing Windows user environment and remains manual-only. In the latest verification, one full News Intelligence attempt reported 0.19490048 ₽ for five calls; the earlier diagnostic attempt's cost was not returned. No automatic or background paid calls are enabled.
+- External AI is enabled through the existing Windows user environment and remains manual-only in Studio and the product. In the latest live News Intelligence attempt, Polza reported 0.19490048 ₽ for five calls; the earlier diagnostic attempt's cost was not returned. No provider calls were made in the latest all-module recheck, and no automatic or background paid calls are enabled.
 - T09/T10 Postgres integration suites were not run because no integration database was configured.
 
