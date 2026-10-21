@@ -1,0 +1,9 @@
+pandas
+requests
+streamlit>=1.37
+PyMuPDF
+numpy
+img2table
+pytesseract
+nltk
+rank-bm25

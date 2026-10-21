@@ -1,0 +1,15 @@
+{
+  "name": "t08-news-classifier",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test:taxonomy": "node --test test/taxonomy-choice.test.mjs",
+    "test:semantic-evidence": "node --test test/semantic-evidence.test.mjs",
+    "test:explicit-entities": "node --test test/explicit-government-entities.test.mjs"
+  },
+  "dependencies": {}
+}

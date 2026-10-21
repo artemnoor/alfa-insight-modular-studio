@@ -1,0 +1,16 @@
+{
+  "name": "t09-vectorizer",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=../pipeline/.env src/server.mjs",
+    "test": "node --test test/deduplication.test.mjs test/event-registry.test.mjs test/local-embeddings.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  }
+}

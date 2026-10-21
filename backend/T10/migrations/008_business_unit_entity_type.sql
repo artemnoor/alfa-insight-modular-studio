@@ -1,0 +1,6 @@
+ALTER TABLE t10.entities
+  DROP CONSTRAINT IF EXISTS entities_entity_type_check;
+
+ALTER TABLE t10.entities
+  ADD CONSTRAINT entities_entity_type_check
+  CHECK (entity_type IN ('COMPANY','BUSINESS_UNIT','PRODUCT','SERVICE','COMPONENT','FACILITY','RESOURCE','PROCESS','CONTRACT','LOCATION','PERSON','TECHNOLOGY'));

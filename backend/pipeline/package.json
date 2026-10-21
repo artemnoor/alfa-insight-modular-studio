@@ -1,0 +1,12 @@
+{
+  "name": "pipeline-archive",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/stage4-worker.test.mjs test/t08-evidence.test.mjs test/format-t08-blocks.test.mjs"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "alfa-insight-product",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:frontend": "vite --host 127.0.0.1",
+    "api": "python drive_data_analysis_2026-10-20/react_api.py",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "db:seed": "npm --prefix backend/pipeline run seed",
+    "db:run:t08": "npm --prefix backend/pipeline run run:t08",
+    "db:server": "npm --prefix backend/pipeline start",
+    "backend:t10": "npm --prefix backend/T10 start"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  },
+  "dependencies": {
+    "@alfalab/core-components": "^50.35.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
