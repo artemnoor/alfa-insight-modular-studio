@@ -5,8 +5,8 @@ import './module-workbench.css'
 import './module-result.css'
 import './module-result-layout.css'
 
-export type ModuleField = { name: string; label: string; kind?: 'text' | 'number' | 'json'; initial?: string; placeholder?: string; rows?: number; min?: number; max?: number; externalOnly?: boolean }
-export type ModuleSpec = { id: string; title: string; summary: string; purpose: string; fields: ModuleField[]; highlights: { label: string; path: string }[]; renderResult?: (data: Record<string, any>) => ReactNode; localData?: boolean; localCompanyIds?: boolean; localFields?: string[]; externalAi?: boolean; productLink?: boolean }
+export type ModuleField = { name: string; label: string; kind?: 'text' | 'number' | 'json' | 'select'; initial?: string; placeholder?: string; rows?: number; min?: number; max?: number; minLength?: number; externalOnly?: boolean; liveOnly?: boolean; fixtureOnly?: boolean; options?: { value: string; label: string }[] }
+export type ModuleSpec = { id: string; title: string; summary: string; purpose: string; fields: ModuleField[]; highlights: { label: string; path: string }[]; renderResult?: (data: Record<string, any>) => ReactNode; localData?: boolean; localCompanyIds?: boolean; localFields?: string[]; externalAi?: boolean; liveFeed?: boolean; sourceCatalog?: boolean; productLink?: boolean }
 type Scenario = { id: string; name: string; description?: string; input?: Record<string, unknown> }
 type Props = { spec: ModuleSpec }
 
@@ -36,7 +36,7 @@ export function ModuleWorkbench({ spec }: Props) {
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [selected, setSelected] = useState('')
   const [fields, setFields] = useState<Record<string, string>>({})
-  const [mode, setMode] = useState<'fixture' | 'local_data' | 'external_ai'>('fixture')
+  const [mode, setMode] = useState<'fixture' | 'local_data' | 'external_ai' | 'live_feed'>('fixture')
   const [backend, setBackend] = useState<'checking' | 'ready' | 'down'>('checking')
   const [localDataAvailable, setLocalDataAvailable] = useState(false)
   const [externalAIAvailable, setExternalAIAvailable] = useState(false)
@@ -45,6 +45,7 @@ export function ModuleWorkbench({ spec }: Props) {
   const [testRun, setTestRun] = useState<ModuleTestSuiteResponse | null>(null)
   const [error, setError] = useState('')
   const [history, setHistory] = useState<any[]>([])
+  const [sourceCatalog, setSourceCatalog] = useState<any>(null)
   const agentResult = result?.data as Record<string, any> | undefined
 
   useEffect(() => {
@@ -61,12 +62,19 @@ export function ModuleWorkbench({ spec }: Props) {
     }).catch(() => setBackend('down'))
   }, [spec.id])
 
+  useEffect(() => {
+    if (!spec.sourceCatalog) return
+    fetch(`/api/modules/${spec.id}/sources`).then(response => response.json()).then(setSourceCatalog).catch(() => setSourceCatalog(null))
+  }, [spec.id, spec.sourceCatalog])
+
   const selectedScenario = useMemo(() => scenarios.find(row => row.id === selected), [scenarios, selected])
   const isLocalField = (field: ModuleField) => field.name === 'limit' || field.name === 'company_id' || (spec.localCompanyIds && field.name === 'company_ids') || Boolean(spec.localFields?.includes(field.name))
   const customInput = (includeDefaults = false) => {
     const value: Record<string, unknown> = {}
     for (const field of spec.fields) {
       if (field.externalOnly && mode !== 'external_ai') continue
+      if (field.liveOnly && mode !== 'live_feed') continue
+      if (field.fixtureOnly && mode !== 'fixture') continue
       if (mode === 'local_data' && !isLocalField(field)) continue
       if (mode === 'local_data' && field.name === 'company_id' && !(field.name in fields)) continue
       if (!(field.name in fields) && !includeDefaults) continue
@@ -75,6 +83,7 @@ export function ModuleWorkbench({ spec }: Props) {
         if (scenarioValue !== undefined) return field.kind === 'json' ? JSON.stringify(scenarioValue) : String(scenarioValue)
         return field.initial ?? ''
       })()
+      if (field.minLength && String(raw).trim().length < field.minLength) throw new Error(`Введите не менее ${field.minLength} символов в поле «${field.label}».`)
       if (raw === '') continue
       if (field.kind === 'json') {
         try { value[field.name] = JSON.parse(raw) } catch { throw new Error(`Проверьте JSON в поле «${field.label}».`) }
@@ -100,7 +109,7 @@ export function ModuleWorkbench({ spec }: Props) {
       const body = await response.json()
       if (!response.ok) throw new Error(body.error?.message || `Ошибка API: ${response.status}`)
       setResult(body as ModuleRunResponse)
-      if (mode === 'fixture' || spec.id === 'ai-agent') setHistory(previous => [{ at: new Date().toLocaleTimeString('ru-RU'), status: body.validation?.status || body.status, body }, ...previous].slice(0, 3))
+      if (mode === 'fixture' || mode === 'live_feed' || spec.id === 'ai-agent') setHistory(previous => [{ at: new Date().toLocaleTimeString('ru-RU'), status: body.validation?.status || body.status, body }, ...previous].slice(0, 3))
     } catch (caught) {
       if (timeoutTriggered) {
         setError(mode === 'external_ai'
@@ -126,24 +135,26 @@ export function ModuleWorkbench({ spec }: Props) {
       <div><a className="module-back" href="/studio">← Alfa Insight Studio</a><p className="module-eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</p><h1>{spec.title}</h1><p>{spec.summary}</p></div>
       {spec.productLink && <a className="module-product-link" href="/">Открыть продукт для клиента ↗</a>}
     </header>
-    <div className="module-status-row"><span className={`module-status module-status--${backend}`}>Backend: {backend === 'checking' ? 'проверяю…' : backend === 'ready' ? 'доступен' : 'недоступен'}</span><span className="module-status">Внешний AI: {externalAIAvailable ? 'доступен только по выбору' : 'не настроен'}</span><label className="module-mode">Режим данных <select value={mode} onChange={event => setMode(event.target.value as 'fixture' | 'local_data' | 'external_ai')}><option value="fixture">Fixture</option>{spec.localData && <option value="local_data" disabled={!localDataAvailable}>Local Data{localDataAvailable ? '' : ' — не подключены'}</option>}{spec.externalAi && <option value="external_ai" disabled={!externalAIAvailable}>External AI{externalAIAvailable ? ' — по выбору' : ' — нужен opt-in'}</option>}</select></label></div>
+    <div className="module-status-row"><span className={`module-status module-status--${backend}`}>Backend: {backend === 'checking' ? 'проверяю…' : backend === 'ready' ? 'доступен' : 'недоступен'}</span><span className="module-status">Внешний AI: {externalAIAvailable ? 'доступен только по выбору' : 'не настроен'}</span><label className="module-mode">Режим данных <select value={mode} onChange={event => setMode(event.target.value as typeof mode)}><option value="fixture">Fixture</option>{spec.liveFeed && <option value="live_feed">Live RSS — ручной сбор</option>}{spec.localData && <option value="local_data" disabled={!localDataAvailable}>Local Data{localDataAvailable ? '' : ' — не подключены'}</option>}{spec.externalAi && <option value="external_ai" disabled={!externalAIAvailable}>External AI{externalAIAvailable ? ' — по выбору' : ' — нужен opt-in'}</option>}</select></label></div>
+    {spec.sourceCatalog && sourceCatalog?.sources && <section className="module-source-catalog" aria-label="Подключённые источники"><div><h2>Подключённые RSS-источники</h2><p>{sourceCatalog.storedPublications ?? 0} публикаций в рабочей базе · при открытии источники не опрашиваются</p></div><ul>{sourceCatalog.sources.map((source: any) => { const lastRun = (sourceCatalog.recentRuns || []).find((run: any) => run.feed_key === source.key); return <li key={source.key}><strong>{source.source} · {source.feedName}</strong><a href={source.url} target="_blank" rel="noreferrer">RSS ↗</a><small>{source.descriptionContainsFullText ? 'Описание ленты хранится как полный текст' : 'Описание ленты сохраняется как выдержка'}{lastRun ? ` · последний сбор: ${lastRun.status}` : ' · ещё не собиралась'}</small></li> })}</ul></section>}
     <div className="module-layout">
       <form className="module-panel module-inputs" onSubmit={run}>
         <div className="module-panel-title"><div><h2>Входные данные</h2><p>{spec.purpose}</p></div></div>
         {mode === 'fixture' && <label className="module-control"><span>Подготовленный сценарий</span><select value={selected} onChange={event => setSelected(event.target.value)}><option value="">Свои данные</option>{scenarios.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>{selectedScenario?.description && <small>{selectedScenario.description}</small>}</label>}
         {mode === 'local_data' && !spec.localCompanyIds && <label className="module-control"><span>Компания для локального запуска</span><input value={fields.company_id ?? ''} onChange={event => setFields(previous => ({ ...previous, company_id: event.target.value }))} placeholder="ID компании, например U_12345" /></label>}
-        {spec.fields.filter(field => (!field.externalOnly || mode === 'external_ai') && (mode !== 'local_data' || isLocalField(field))).map(field => {
+        {spec.fields.filter(field => (!field.externalOnly || mode === 'external_ai') && (!field.liveOnly || mode === 'live_feed') && (!field.fixtureOnly || mode === 'fixture') && (mode !== 'local_data' || isLocalField(field))).map(field => {
           const scenarioValue = mode === 'fixture' ? selectedScenario?.input?.[field.name] : undefined
           const scenarioDisplay = scenarioValue === undefined ? undefined : field.kind === 'json' ? JSON.stringify(scenarioValue, null, 2) : String(scenarioValue)
           const visibleValue = fields[field.name] ?? scenarioDisplay ?? field.initial ?? ''
-          return <label className="module-control" key={field.name}><span>{field.label}</span>{field.kind === 'json' || (field.rows && field.rows > 1) ? <textarea rows={field.rows || 5} value={visibleValue} placeholder={field.placeholder} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))} /> : <input type={field.kind === 'number' ? 'number' : 'text'} min={field.min} max={field.max} value={visibleValue} placeholder={field.placeholder} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))} />}</label>
+          return <label className="module-control" key={field.name}><span>{field.label}</span>{field.kind === 'select' ? <select value={visibleValue} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))}>{(field.options || []).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : field.kind === 'json' || (field.rows && field.rows > 1) ? <textarea rows={field.rows || 5} value={visibleValue} placeholder={field.placeholder} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))} /> : <input type={field.kind === 'number' ? 'number' : 'text'} min={field.min} max={field.max} value={visibleValue} placeholder={field.placeholder} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))} />}</label>
         })}
-        <div className="module-actions"><button className="module-primary" disabled={Boolean(busy) || backend === 'down'}>{busy === 'run' ? 'Выполняю…' : 'Запустить алгоритм'}</button><button className="module-secondary" type="button" disabled={Boolean(busy)} onClick={testAll}>{busy === 'tests' ? 'Проверяю…' : `Запустить ${scenarios.length} теста`}</button></div>
+        {mode === 'live_feed' && <p className="module-result-inline-note">По нажатию будет выполнен один GET-запрос к выбранной публичной RSS-ленте. Клиентские данные не отправляются; публикации и журнал сохраняются в локальной базе этого рабочего клона.</p>}
+        <div className="module-actions"><button className="module-primary" disabled={Boolean(busy) || backend === 'down'}>{busy === 'run' ? 'Выполняю…' : mode === 'live_feed' ? 'Собрать выбранную RSS-ленту' : 'Запустить алгоритм'}</button><button className="module-secondary" type="button" disabled={Boolean(busy)} onClick={testAll}>{busy === 'tests' ? 'Проверяю…' : `Запустить ${scenarios.length} теста`}</button></div>
         {mode === 'external_ai' && <p className="module-result-inline-note">Внешняя модель получит только подготовленные синтетические профиль и новость. Перед запуском задайте лимит стоимости; режим не включается автоматически.</p>}
         {error && <div className="module-error" role="alert">{error}</div>}
       </form>
       <section className="module-panel module-results" aria-live="polite">
-        <div className="module-panel-title"><div><h2>Результат</h2><p>Фикстурные сценарии используют реальные локальные алгоритмы. Источники и допущения указаны в результате.</p></div>{result && <span className={`module-badge module-badge--${result.validation?.status === 'PASS' ? 'pass' : 'neutral'}`}>{result.validation?.status || result.status}</span>}</div>
+        <div className="module-panel-title"><div><h2>Результат</h2><p>{result?.mode === 'live_feed' ? 'Результат реального запроса к публичному источнику. Сбор и ошибки источника отражены ниже.' : 'Фикстурные сценарии используют реальные локальные алгоритмы. Источники и допущения указаны в результате.'}</p></div>{result && <span className={`module-badge module-badge--${result.validation?.status === 'PASS' ? 'pass' : 'neutral'}`}>{result.validation?.status || result.status}</span>}</div>
         {!result && !testRun && !busy && <div className="module-empty"><strong>Сценарий готов к запуску</strong><span>Выберите фикстуру или введите собственные данные.</span></div>}
         {busy && <div className="module-loading"><span className="module-spinner" />{busy === 'tests' ? `Выполняю набор из ${scenarios.length} сценариев…` : 'Передаю данные адаптеру и запускаю алгоритм…'}</div>}
         {result && <>

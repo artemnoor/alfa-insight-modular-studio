@@ -124,24 +124,32 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
         for slug, folder, name, purpose in MODULES:
             local_available = _local_data_available(slug)
             external_available = _external_ai_available(slug)
-            modes = ["Fixture"] + (["Local Data"] if local_available else []) + (["External AI (manual opt-in)"] if external_available else [])
+            modes = ["Fixture"] + (["Live RSS (manual)"] if slug == "news-collector" else []) + (["Local Data"] if local_available else []) + (["External AI (manual opt-in)"] if external_available else [])
             rows.append({"id": slug, "folder": "modules/" + folder, "name": name, "purpose": purpose,
                          "backendAvailable": (_folder(slug) / "backend" / "adapter.py").is_file(),
                          "mode": " / ".join(modes),
                          "localDataAvailable": local_available,
+                         "liveFeedAvailable": slug == "news-collector",
                          "externalAiAvailable": external_available,
                          "externalAiEnabled": False, "lastResult": LAST.get(slug)})
         return 200, {"contractVersion": "1.0", "modules": rows}
-    match = re.fullmatch(r"/api/modules/([a-z-]{3,40})/(health|scenarios|run|tests)", path)
+    match = re.fullmatch(r"/api/modules/([a-z-]{3,40})/(health|scenarios|sources|run|tests)", path)
     if not match:
         return None
     slug, action = match.groups()
     if slug not in BY_SLUG:
         return 404, {"contractVersion": "1.0", "error": {"code": "MODULE_NOT_FOUND", "message": "Модуль не найден."}}
-    if action in {"health", "scenarios"} and method != "GET" or action in {"run", "tests"} and method != "POST":
+    if action in {"health", "scenarios", "sources"} and method != "GET" or action in {"run", "tests"} and method != "POST":
         return 405, {"contractVersion": "1.0", "error": {"code": "METHOD_NOT_ALLOWED", "message": "Метод не поддерживается."}}
     if action == "health":
-        return 200, {"contractVersion": "1.0", "module": slug, "available": (_folder(slug) / "backend" / "adapter.py").is_file(), "mode": "Fixture", "localDataAvailable": _local_data_available(slug), "externalAiAvailable": _external_ai_available(slug), "externalAiEnabled": False}
+        return 200, {"contractVersion": "1.0", "module": slug, "available": (_folder(slug) / "backend" / "adapter.py").is_file(), "mode": "Fixture", "localDataAvailable": _local_data_available(slug), "liveFeedAvailable": slug == "news-collector", "externalAiAvailable": _external_ai_available(slug), "externalAiEnabled": False}
+    if action == "sources":
+        if slug != "news-collector":
+            return 404, {"contractVersion": "1.0", "error": {"code": "CATALOG_NOT_AVAILABLE", "message": "У этого модуля нет подключаемых источников."}}
+        try:
+            return 200, {"contractVersion": "1.0", **_load(slug).catalog()}
+        except Exception as exc:
+            return 503, {"contractVersion": "1.0", "error": {"code": "SOURCE_CATALOG_UNAVAILABLE", "message": f"Не удалось получить список источников: {type(exc).__name__}."}}
     try:
         scenarios = _scenarios(slug)
     except Exception as exc:
@@ -150,12 +158,14 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
         return 200, {"contractVersion": "1.0", "scenarios": [{k: row.get(k) for k in ("id", "name", "description", "input", "expect")} for row in scenarios]}
     body = body or {}
     mode = str(body.get("mode") or "fixture")
+    if mode == "live_feed" and slug != "news-collector":
+        return 403, {"contractVersion": "1.0", "error": {"code": "LIVE_SOURCE_NOT_SUPPORTED", "message": "Ручной сбор публичного RSS доступен только в модуле News Collector."}}
     if mode == "external_ai" and slug != "ai-agent":
         return 403, {"contractVersion": "1.0", "error": {"code": "EXTERNAL_AI_NOT_SUPPORTED", "message": "Внешний AI доступен только в AI Agent Studio."}}
     if mode == "external_ai" and not _external_ai_available(slug):
         return 409, {"contractVersion": "1.0", "error": {"code": "EXTERNAL_AI_UNAVAILABLE", "message": "Внешний AI закрыт. Проверьте явный ALFA_ENABLE_EXTERNAL_AI=1, API-ключ и разрешённую модель."}}
-    if mode not in {"fixture", "local_data", "external_ai"}:
-        return 400, {"contractVersion": "1.0", "error": {"code": "INVALID_MODE", "message": "Выберите Fixture или Local Data."}}
+    if mode not in {"fixture", "local_data", "external_ai", "live_feed"}:
+        return 400, {"contractVersion": "1.0", "error": {"code": "INVALID_MODE", "message": "Выберите Fixture, Live RSS, Local Data или External AI."}}
     if mode == "local_data" and not _local_data_available(slug):
         return 409, {"contractVersion": "1.0", "error": {"code": "LOCAL_DATA_UNAVAILABLE", "message": "Локальный CSV компаний и архив новостей не подключены. Выберите Fixture или подключите разрешённые локальные данные."}}
     external_lock_acquired = mode == "external_ai"
@@ -187,6 +197,10 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
             if not hasattr(adapter, "run_external"):
                 return 409, {"contractVersion": "1.0", "error": {"code": "EXTERNAL_AI_UNAVAILABLE", "message": "Для этого адаптера нет контролируемого внешнего AI запуска."}}
             data = adapter.run_external(values)
+        elif mode == "live_feed":
+            if not hasattr(adapter, "run_live"):
+                return 409, {"contractVersion": "1.0", "error": {"code": "LIVE_SOURCE_UNAVAILABLE", "message": "Адаптер не поддерживает ручной запуск внешнего источника."}}
+            data = adapter.run_live(values)
         elif mode == "local_data":
             if not hasattr(adapter, "run_local"):
                 return 409, {"contractVersion": "1.0", "error": {"code": "LOCAL_DATA_UNAVAILABLE", "message": "Для этого адаптера нет безопасного подключения к локальным данным."}}
@@ -195,6 +209,10 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
             data = adapter.run(values)
         if mode == "external_ai":
             checks = _external_validation(data)
+        elif mode == "live_feed":
+            run_status = data.get("status")
+            checks = [{"name": "Публичная RSS-лента получена и обработана", "passed": run_status == "ok",
+                       "expected": {"equals": "ok"}, "actual": run_status}]
         else:
             checks = _check(data, (scenario or {}).get("expect", []))
         state = "PASS" if all(item["passed"] for item in checks) else "FAIL"

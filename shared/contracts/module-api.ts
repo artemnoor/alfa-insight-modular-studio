@@ -1,4 +1,4 @@
-export type ModuleDataMode = 'fixture' | 'local_data' | 'external_ai'
+export type ModuleDataMode = 'fixture' | 'local_data' | 'external_ai' | 'live_feed'
 export type ValidationStatus = 'PASS' | 'FAIL'
 
 export type ModuleApiError = {

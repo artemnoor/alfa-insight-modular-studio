@@ -1,7 +1,7 @@
 """Shared v1 shapes used by the module HTTP gateway and adapter authors."""
 from typing import Any, Literal, TypedDict
 
-DataMode = Literal["fixture", "local_data", "external_ai"]
+DataMode = Literal["fixture", "local_data", "external_ai", "live_feed"]
 ValidationStatus = Literal["PASS", "FAIL"]
 
 class ModuleRunRequest(TypedDict, total=False):

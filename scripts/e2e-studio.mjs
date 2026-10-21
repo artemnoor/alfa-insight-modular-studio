@@ -6,12 +6,13 @@ const base = process.env.ALFA_STUDIO_URL || 'http://127.0.0.1:5173'
 const localCompanyIds = (process.env.ALFA_E2E_LOCAL_COMPANY_IDS || '').split(',').map(value => value.trim()).filter(Boolean).slice(0,2)
 const [localCompanyA, localCompanyB] = localCompanyIds.length === 2 ? localCompanyIds : ['U_BUILD', 'U_FINANCE']
 const expectedLocalEventText = process.env.ALFA_E2E_LOCAL_EVENT_TITLE || ''
+const runLiveRss = process.env.ALFA_E2E_LIVE_RSS === '1'
 const out = path.resolve('output/playwright/modular-studio')
 await mkdir(out, { recursive: true })
 const modules = ['news-collector','news-intelligence','business-intelligence','personalization','impact-analysis','bank-research','ai-agent','evidence-verification','alfa-product']
 const resultMarkers = {
   'news-collector': 'Публикации',
-  'news-intelligence': 'Кандидаты классификации T08',
+  'news-intelligence': 'T08 · классификация публикации',
   'business-intelligence': 'Наблюдаемые связи',
   'personalization': 'Персональные ленты',
   'impact-analysis': 'Данные и предположения',
@@ -63,11 +64,33 @@ try {
     const suiteStatus = await page.locator('.module-test-list .module-badge').innerText()
     if (suiteStatus !== 'PASS') throw new Error(`${slug}: набор сценариев ${suiteStatus}`)
     const testScenarioCount = await page.locator('.module-test-list .module-test').count()
-    const expectedTestScenarioCount = slug === 'ai-agent' ? 4 : 3
+    const expectedTestScenarioCount = ['ai-agent', 'news-intelligence'].includes(slug) ? 4 : 3
     if (testScenarioCount !== expectedTestScenarioCount) throw new Error(`${slug}: ожидалось ${expectedTestScenarioCount} подготовленных тестов, получено ${testScenarioCount}`)
     await page.getByRole('button', { name: 'Запустить алгоритм' }).click()
     await page.locator('.module-specific-result, .module-highlights').waitFor({ timeout: 20000 })
     if (slug === 'ai-agent') await page.getByText(/Сравнение запусков в этой сессии/).waitFor({ timeout: 5000 })
+    if (slug === 'news-intelligence') {
+      await page.locator('.module-control select').first().selectOption('')
+      await page.getByLabel('Текст публикации').fill('Слишком коротко')
+      await page.getByRole('button', { name: 'Запустить алгоритм' }).click()
+      const validationError = await page.locator('.module-error[role="alert"]').innerText({ timeout: 5000 })
+      if (!validationError.includes('не менее 20 символов')) throw new Error(`News Intelligence не объяснил ошибку короткого текста: ${validationError}`)
+      await page.screenshot({ path: path.join(out,'news-intelligence-input-error.png'), fullPage: true })
+      await page.locator('.module-control select').first().selectOption('full-classification')
+      await page.getByLabel('Текст публикации').fill('Банк России сообщил о новых условиях кредитования инфраструктурных проектов. Компания «Тест» изучает опубликованные условия.')
+    }
+    let liveRssStatus = 'not requested'
+    if (slug === 'news-collector' && runLiveRss) {
+      await page.locator('.module-mode select').selectOption('live_feed')
+      await page.locator('.module-control select').first().selectOption('cbr_press')
+      await page.getByRole('button', { name: 'Собрать выбранную RSS-ленту' }).click()
+      await page.locator('.module-results .module-specific-result').waitFor({ timeout: 30000 })
+      const liveResult = await page.locator('.module-results').innerText()
+      const badge = (await page.locator('.module-results .module-badge').first().innerText()).trim()
+      if (badge !== 'PASS' || !liveResult.includes('Статус сбора') || !liveResult.includes('ok')) throw new Error(`Ручной сбор CBR RSS не завершился успешно: ${liveResult.slice(-1200)}`)
+      await page.screenshot({ path: path.join(out,'news-collector-live-rss.png'), fullPage: true })
+      liveRssStatus = 'PASS (public CBR RSS fetched; workspace SQLite only)'
+    }
     let localDataStatus = 'not available'
     if (runRealLocalData && ['business-intelligence', 'personalization', 'bank-research'].includes(slug)) {
       await page.locator('.module-mode select').selectOption('local_data')
@@ -102,8 +125,8 @@ try {
     const laptopWidth = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
     if (laptopWidth.content > laptopWidth.viewport) throw new Error(`${slug}: переполнение ноутбука ${JSON.stringify(laptopWidth)}`)
     await page.setViewportSize({ width: 1440, height: 960 })
-    if (slug === 'personalization' || slug === 'ai-agent') await page.screenshot({ path: path.join(out,`${slug}-desktop.png`), fullPage: true })
-    results.push({ slug, heading, runStatus, suiteStatus, testScenarioCount, localDataStatus, width, laptopWidth })
+    if (slug === 'personalization' || slug === 'ai-agent' || slug === 'news-intelligence') await page.screenshot({ path: path.join(out,`${slug}-desktop.png`), fullPage: true })
+    results.push({ slug, heading, runStatus, suiteStatus, testScenarioCount, localDataStatus, liveRssStatus, width, laptopWidth })
   }
   await page.goto(`${base}/`, { waitUntil: 'networkidle' })
   if (!runRealLocalData) {
@@ -159,6 +182,12 @@ try {
   await mobile.screenshot({ path: path.join(out,'studio-mobile-390.png'), fullPage: true })
   const mobileWidth = await mobile.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
   if (mobileWidth.content > mobileWidth.viewport) throw new Error(`Мобильная Studio переполняет ширину: ${JSON.stringify(mobileWidth)}`)
+  await mobile.goto(`${base}/studio/news-intelligence`, { waitUntil: 'networkidle' })
+  await mobile.getByRole('button', { name: 'Запустить алгоритм' }).click()
+  await mobile.locator('.module-specific-result').waitFor({ timeout: 20000 })
+  const newsIntelligenceMobileWidth = await mobile.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
+  if (newsIntelligenceMobileWidth.content > newsIntelligenceMobileWidth.viewport) throw new Error(`Мобильный News Intelligence переполняет ширину: ${JSON.stringify(newsIntelligenceMobileWidth)}`)
+  await mobile.screenshot({ path: path.join(out,'news-intelligence-mobile-390.png'), fullPage: true })
   await mobile.goto(`${base}/studio/personalization`, { waitUntil: 'networkidle' })
   await mobile.locator('.module-control select').selectOption('compare')
   await mobile.getByRole('button', { name: 'Запустить алгоритм' }).click()
@@ -178,7 +207,7 @@ try {
     if (productMobileWidth.content > productMobileWidth.viewport) throw new Error(`Мобильный клиентский продукт переполняет ширину: ${JSON.stringify(productMobileWidth)}`)
     await mobile.screenshot({ path: path.join(out,'product-mobile-390.png'), fullPage: true })
   }
-  console.log(JSON.stringify({ status: 'PASS', cards, results, mobileWidth, moduleMobileWidth, productMobileWidth, errors, screenshots: out }, null, 2))
+  console.log(JSON.stringify({ status: 'PASS', cards, results, mobileWidth, newsIntelligenceMobileWidth, moduleMobileWidth, productMobileWidth, errors, screenshots: out }, null, 2))
   if (errors.length) process.exitCode = 1
 } finally {
   await browser.close()

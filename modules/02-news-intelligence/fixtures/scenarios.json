@@ -1,1 +1,59 @@
-{"scenarios":[{"id":"success","name":"T08 и T09 локально","description":"T08 нормализует выбор кандидатов, T09 строит локальный вектор.","input":{"text":"Кредитование инфраструктурных проектов и условия банков.","choices":[{"id":"EVENT_FINANCE","confidence":0.82}]},"expect":[{"path":"t08ChoiceNormalization.supported","equals":true},{"path":"t09Embedding.dimensions","equals":4096}]},{"id":"no-choice","name":"Нет допустимого класса","description":"Пустой список остаётся неподдержанным решением.","input":{"text":"","choices":[],"allow_empty":true},"expect":[{"path":"t08ChoiceNormalization.supported","equals":false},{"path":"t09Embedding.nonZeroDimensions","equals":0}]},{"id":"invalid-choice","name":"Недопустимый ID","description":"Неизвестный таксономический ID отклоняется ожидаемой ошибкой.","input":{"text":"Новость","choices":[{"id":"NO_SUCH_EVENT","confidence":0.9}]},"expectError":"ValueError"}]}
+{
+  "scenarios": [
+    {
+      "id": "full-classification",
+      "name": "Полная обработка T08 + T09",
+      "description": "Запускает реальный проход классификатора, извлечения сущностей, проверки доказательств и сравнения с одним архивным кандидатом. Модельные ответы синтетические.",
+      "input": {
+        "text": "Банк России сообщил о новых условиях кредитования проектов по защите критической инфраструктуры. Компания «Тест» изучает опубликованные условия.",
+        "content_status": "excerpt",
+        "t09_candidates": [
+          {
+            "newsId": "fixture-credit-001",
+            "title": "Условия финансирования инфраструктурных проектов",
+            "content": "Компания «Тест» изучает условия кредитования проектов критической инфраструктуры.",
+            "publicationDate": "2026-10-20",
+            "contentStatus": "excerpt"
+          }
+        ]
+      },
+      "expect": [
+        { "path": "t08Classification.classifications.event.status", "equals": "model" },
+        { "path": "t09EventMatching.decision.relation", "equals": "UNSURE" },
+        { "path": "fixtureTransport.externalNetworkCalls", "equals": 0 }
+      ]
+    },
+    {
+      "id": "no-classification-choice",
+      "name": "Пустой текст и нет кандидата T08",
+      "description": "Проверяет нормализацию пустого ответа и безопасный нулевой вектор без запуска T08.",
+      "input": { "text": "", "choices": [], "allow_empty": true },
+      "expect": [
+        { "path": "t08ChoiceNormalization.supported", "equals": false },
+        { "path": "t09Embedding.nonZeroDimensions", "equals": 0 }
+      ]
+    },
+    {
+      "id": "empty-event-archive",
+      "name": "Пустой архив событий T09",
+      "description": "Проверяет правило T09: если кандидатов нет, событие получает DIFFERENT без модельного сравнения.",
+      "input": {
+        "text": "Компания «Пример» объявила о новом строительном проекте в регионе.",
+        "content_status": "full",
+        "t09_candidates": []
+      },
+      "expect": [
+        { "path": "t09EventMatching.decision.relation", "equals": "DIFFERENT" },
+        { "path": "t09EventMatching.decision.resolution", "equals": "CREATE_NEW_EVENT" },
+        { "path": "fixtureTransport.externalNetworkCalls", "equals": 0 }
+      ]
+    },
+    {
+      "id": "invalid-taxonomy-choice",
+      "name": "Недопустимый taxonomy ID",
+      "description": "Проверяет, что T08 отвергает ID, которого нет в разрешённом списке.",
+      "input": { "text": "Новость содержит достаточно длинный текст для валидации.", "choices": [{ "id": "NO_SUCH_EVENT", "confidence": 0.9 }] },
+      "expectError": "ValueError"
+    }
+  ]
+}

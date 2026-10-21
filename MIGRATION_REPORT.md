@@ -9,7 +9,7 @@
 | Функция | Канонический владелец после переноса | Обратная совместимость |
 |---|---|---|
 | News collector | `modules/01-news-collector/backend/news_collector.py` | Старый путь импортирует канонический модуль; CLI сохранён |
-| T08/T09 | `backend/T08`, `backend/T09` | 02 Node runner вызывает существующие `rankModelChoices`, `vectorizeLocalText` |
+| T08/T09 | `backend/T08`, `backend/T09` | 02 Node runner вызывает `classifyNews`, `rankModelChoices`, `vectorizeLocalText`, `classifyEventRelation`; fixture transport блокирует сеть и возвращает синтетические ответы модели |
 | Business graph и профиль | `modules/03-business-intelligence/backend/business_graph.py`, `stage1_analyzer.py` | Старые Python пути перенаправляются на владельца модуля |
 | Personalization | `modules/04-personalization/backend/personalization.py` | Старый Python путь перенаправляется на владельца модуля |
 | Impact Analysis | `modules/05-impact-analysis/backend/stage2_analyzer.py` | Старый Python путь перенаправляется на владельца модуля; общая сверка доказательств импортируется из module 08 |
@@ -28,6 +28,8 @@
 - Инициализация истории при простом запуске пропущена; API не создаёт/мигрирует пользовательскую историю только от открытия Studio.
 - Добавлены `apps/studio` и `apps/product` entrypoint адаптеры, девять frontend-карточек, модульные контракты v1 и команды запуска/тестов.
 - `local_data_paths.py` перемещён в `shared/backend`; runtime-пути CSV, news SQLite и RAG JSON сохраняют режим чтения источников, производный граф-кэш создаётся в staging clone.
+- News Collector получил ручной live RSS-режим для фиксированного списка публичных лент. Проверена одна CBR-лента; сохранение идёт в локальную SQLite клона.
+- News Intelligence получил отдельный T08/T09 экран и полный локально исполняемый pipeline adapter. Поскольку реальные модельные ответы не запускались, fixture transport явно возвращает synthetic completions; выводы фикстур не являются проверкой точности.
 - Fixture и Local Data проверки не вызывают внешние модели. Предыдущая отдельная попытка External AI только на синтетической фикстуре не завершилась за 125 секунд; стоимость неизвестна, повторов не было, opt-in выключен.
 
 ## Совместимость

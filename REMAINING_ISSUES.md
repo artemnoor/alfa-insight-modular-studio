@@ -4,10 +4,10 @@
 
 1. **High — Bank Research relevance.** The real Local Data BM25 call completed, but its top result for an infrastructure-credit query was a general macroeconomic page. Keep the result labelled as lexical context; add better relevance thresholds or semantic review before presenting it as directly relevant bank research.
 2. **High — live agent not verified.** One earlier authorized synthetic-only External AI attempt timed out after 125 seconds, and the provider did not report final cost. No repeat was made. External AI remains disabled; only the actual orchestrator's deterministic fixture path and local product research/chat were verified.
-3. **Medium — full T08 model path.** T08 response normalization and T09 local vectorization run in isolation. Model-backed T08 classification needs an explicitly enabled approved provider and has not been run in this validation.
+3. **High — live News Intelligence inference and archive selection.** The module now runs the actual T08 `classifyNews` and T09 `classifyEventRelation` control flow, but uses a deterministic, network-blocked fixture transport. It does not verify real model answers and chooses no article candidates from the local archive automatically; users currently paste T09 candidates as JSON. Add an explicitly budgeted approved-model mode and a read-only archive picker before treating module 02 as ready for analyst use.
 4. **Medium — Impact Analysis generation.** The adapter exercises current evidence guards and uncertainty behavior, but does not generate fresh narrative analysis without an AI call.
 5. **Medium — evidence coverage.** Exact quote presence and source IDs are checked. Independent semantic applicability, composite-claim, number, and contradiction review are not implemented in the module UI.
-6. **Medium — news collection external dependency.** RSS parsing, deduplication, dates, and failure fixtures run locally; fetching current network sources was not exercised.
+6. **Medium — news collection source coverage.** One manual live CBR RSS fetch completed and wrote only to the clone-local collector database. The second allowlisted source and its live outage behavior were not exercised; injected failure fixtures cover the error path without changing source data.
 7. **Medium — personalization evaluation.** Local profiles and archive ranking work, but no independent judgement set exists, so ranking quality metrics are not reported. The same evidence gaps can yield equal scores across companies.
 
 ## Architecture and operations
