@@ -16,6 +16,23 @@ let blockedExternalLookups = 0
 let serialFetchQueue = Promise.resolve()
 const providerUsage = { model: null, modelCalls: 0, inputTokens: 0, outputTokens: 0, costRub: 0, costReported: true, budgetRub: Number(input.max_cost_rub || 1), budgetExceeded: false }
 
+function providerFailure(error) {
+  const raw = String(error?.message || error || 'неизвестная ошибка провайдера').replace(/\s+/gu, ' ').trim()
+  const publicMessage = raw.split('; response=')[0]
+    .replace(/Bearer\s+\S+/giu, 'Bearer [скрыт]')
+    .replace(/pza_[A-Za-z0-9._-]+/gu, '[ключ скрыт]')
+    .slice(0, 300)
+  const status = Number(raw.match(/\bHTTP\s+(\d{3})\b/iu)?.[1])
+  const code = status === 401 ? 'POLZA_AUTH_FAILED'
+    : status === 402 ? 'POLZA_BALANCE_OR_LIMIT'
+      : status === 404 ? 'POLZA_MODEL_UNAVAILABLE'
+        : status === 429 ? 'POLZA_RATE_LIMITED'
+          : status >= 500 ? 'POLZA_PROVIDER_UNAVAILABLE'
+            : /timeout|timed out|aborted/iu.test(raw) ? 'POLZA_REQUEST_TIMEOUT'
+              : 'T08_CLASSIFICATION_FAILED'
+  return { code, message: `T08 не завершил классификацию: ${publicMessage}. T09 не запускался.` }
+}
+
 const response = (answer, model = 'fixture-transport') => new Response(JSON.stringify({
   model,
   choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(answer) } }],
@@ -104,13 +121,14 @@ if (!externalMode) {
       try { request = JSON.parse(options.body || '{}') } catch {}
       if (!HACK_APPROVED_MODEL_IDS.includes(request.model)) throw new Error('Запрошенная модель отсутствует в allowlist Alfa Insight.')
       request.max_tokens = Math.min(Number(request.max_tokens) || 800, 1000)
+      providerUsage.modelCalls += 1
+      providerUsage.model = request.model
+      providerUsage.costReported = false
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 25000)
       let responseValue
       try { responseValue = await nativeFetch(target, { ...options, body: JSON.stringify(request), signal: controller.signal }) }
       finally { clearTimeout(timer) }
-      providerUsage.modelCalls += 1
-      providerUsage.model = request.model
       try {
         const envelope = await responseValue.clone().json()
         const usage = envelope?.usage || {}
@@ -120,6 +138,7 @@ if (!externalMode) {
         const cost = rawCost == null ? Number.NaN : Number(rawCost)
         if (Number.isFinite(cost)) {
           providerUsage.costRub += cost
+          providerUsage.costReported = true
           if (providerUsage.costRub > providerUsage.budgetRub) providerUsage.budgetExceeded = true
         } else providerUsage.costReported = false
       } catch { providerUsage.costReported = false }
@@ -153,12 +172,9 @@ if (article.trim().length >= 20) {
     if (!externalMode) throw error
     await serialFetchQueue
     const taxonomyRejected = String(error?.message || '').includes('не выбрала ни одного допустимого ID таксономии')
-    result.error = {
-      code: taxonomyRejected ? 'TAXONOMY_SELECTION_UNCERTAIN' : 'T08_CLASSIFICATION_FAILED',
-      message: taxonomyRejected
-        ? 'Polza вернул ответ без допустимой метки таксономии. T08 остановлен; T09 не запускался.'
-        : 'Polza/T08 не завершил классификацию. T09 не запускался.',
-    }
+    result.error = taxonomyRejected
+      ? { code: 'TAXONOMY_SELECTION_UNCERTAIN', message: 'Polza вернул ответ без допустимой метки таксономии. T08 остановлен; T09 не запускался.' }
+      : providerFailure(error)
     result.t08Status = 'failed'
     result.t09Status = 'not_run'
   }
