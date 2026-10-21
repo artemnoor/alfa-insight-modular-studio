@@ -14,10 +14,10 @@
 
 ## Architecture and operations
 
-9. **Single-process module launch.** `studio:module` opens a direct route and starts the shared API + Vite process. It does not start nine independent API servers, by design; running multiple Studio/Vite instances in parallel was not tested.
-10. **Local sources are not in Git.** Configure `ALFA_INSIGHT_DATA_ROOT` to the directory containing `drive_data_analysis_2026-10-20/` and `data/`. Business Intelligence, personalization, Bank Research, and the product then read source files. Graph cache and newly created local test history are written only in this clone.
-11. **Responsive comparison density.** No horizontal overflow was found at 390 px, but the two-company comparison grid is dense on a phone. A stacked row layout would improve readability.
-12. **Medium — repeated chat entries in existing history.** The earlier U_9250 history view showed repeated question/answer pairs. The latest E2E submitted one local-demo question and added entries only to this staging clone's history. The original source-project history was not changed. Inspect older repeated entries to determine whether they were saved more than once or rendered twice.
+10. **Single-process module launch.** `studio:module` opens a direct route and starts the shared API + Vite process. It does not start nine independent API servers, by design; running multiple Studio/Vite instances in parallel was not tested.
+11. **Local sources are not in Git.** Configure `ALFA_INSIGHT_DATA_ROOT` to the directory containing `drive_data_analysis_2026-10-20/` and `data/`. Business Intelligence, personalization, Bank Research, and the product then read source files. Graph cache and newly created local test history are written only in this clone.
+12. **Responsive comparison density.** No horizontal overflow was found at 390 px, but the two-company comparison grid is dense on a phone. A stacked row layout would improve readability.
+13. **Medium — repeated chat entries in existing history.** The earlier U_9250 history view showed repeated question/answer pairs. The latest E2E submitted one local-demo question and added entries only to this staging clone's history. The original source-project history was not changed. Inspect older repeated entries to determine whether they were saved more than once or rendered twice.
 
 ## Data and cost handling
 
