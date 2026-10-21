@@ -86,7 +86,14 @@ a:hover { color: #7e1520; }
 .insight-feed-search { min-height: 40px; padding-block: 8px; font-size: 12px; }
 .insight-result-count { margin: 10px 0 0; color: #81858c; font-size: 11px; }
 .insight-inline-note { margin: 10px 18px; padding: 10px 12px; border-inline-start: 3px solid #d3a63a; border-radius: 5px; background: #fffaf0; color: #5d4a1e; font-size: 12px; line-height: 1.45; }
-.insight-event-list { flex: 1; overflow: auto; padding: 0 10px 12px; overscroll-behavior: contain; }
+.insight-feed-content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.insight-feed-group-title { margin: 4px 16px 0; padding: 10px 0 7px; border-block-end: 1px solid #eceef0; color: #555b63; font-size: 11px; font-weight: 650; }
+.insight-event-list { padding: 0 10px 12px; }
+.insight-general-events { margin: 6px 10px 12px; border-block-start: 1px solid #e7e8ea; }
+.insight-general-events > summary { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 7px; color: #676c73; font-size: 11px; font-weight: 600; cursor: pointer; list-style-position: inside; }
+.insight-general-events > summary span { color: #858a91; font-weight: 500; }
+.insight-general-events > p { margin: 0 7px 7px; color: #858a91; font-size: 10px; line-height: 1.4; }
+.insight-no-personal-signals { margin-inline: 12px; }
 .insight-event-card { display: block; width: 100%; padding: 15px 13px 14px; border: 0; border-block-start: 1px solid #eceef0; border-inline-start: 3px solid transparent; border-radius: 7px; background: transparent; text-align: start; cursor: pointer; transition: background-color 130ms ease, border-color 130ms ease; }
 .insight-event-card:hover { background: #f8f8f9; }
 .insight-event-card.is-active { border-inline-start-color: var(--insight-red); background: #fff8f8; }
@@ -263,7 +270,8 @@ a:hover { color: #7e1520; }
   .insight-company-meta { max-width: 48vw; }
   .insight-lab-link { flex: 0 0 auto; min-height: 40px; padding-inline: 7px; font-size: 11px; }
   .insight-workspace { display: block; min-height: calc(100vh - 120px); padding: 12px; }
-  .insight-feed { position: static; display: flex; height: auto; min-height: calc(100vh - 135px); max-height: calc(100vh - 135px); border-radius: 11px; }
+  .insight-feed { position: static; display: flex; height: auto; min-height: calc(100vh - 135px); max-height: none; border-radius: 11px; }
+  .insight-feed-content { flex: 0 0 auto; overflow: visible; }
   .insight-analysis { display: none; height: auto; max-height: none; overflow: visible; border: 0; background: transparent; }
   .insight-workspace.is-mobile-detail .insight-feed { display: none; }
   .insight-workspace.is-mobile-detail .insight-analysis { display: block; }
@@ -272,6 +280,7 @@ a:hover { color: #7e1520; }
   .insight-event-title { font-size: 26px; }
   .insight-feed-head { padding: 18px 17px 13px; }
   .insight-event-list { padding-inline: 7px; }
+  .insight-general-events { margin-inline: 7px; }
   .insight-event-card { padding: 14px 10px; }
   .insight-analysis-toolbar { flex-direction: column; gap: 8px; }
   .insight-uncertainty { grid-template-columns: 9px minmax(0, 1fr); }

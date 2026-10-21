@@ -16,7 +16,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parent
 ARCHIVE_DB_PATH = ROOT.parent / "data" / "news_pipeline.sqlite"
 CACHE_DB_PATH = ROOT.parent / "data" / "personalization_cache.sqlite3"
-RANKING_VERSION = "stage6-rules-v8"
+RANKING_VERSION = "stage6-rules-v9"
 ANALYSIS_CACHE_VERSION = "stage6-deep-analysis-v1"
 WEIGHTS = {
     "connection": 0.35,

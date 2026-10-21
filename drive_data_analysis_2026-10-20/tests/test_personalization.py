@@ -302,6 +302,60 @@ class PersonalizationTests(unittest.TestCase):
         self.assertNotIn("industry", {reason["signal"] for reason in result["reasons"]})
         self.assertEqual(0, result["relevance_score"])
 
+    def test_individual_deposit_series_ignores_stale_v8_product_match(self) -> None:
+        fuel_company = {
+            **self.profile,
+            "SYNTHETIC_U": "U_FUEL",
+            "MAINOKVED_CODE": "46.71",
+            "MAINOKVED_NAME": "Торговля оптовая топливом",
+            "CL_PRODUCT_LOA_MARK": "0.0",
+            "CL_PRODUCT_GAR_MARK": "0.0",
+            "CL_PRODUCT_DEP_MARK": "1.0",
+            "FTS_FLAG": "0.0",
+        }
+        event = {
+            **self.event,
+            "event_id": "cbr-individual-deposit-rates",
+            "title": "Результаты мониторинга максимальных процентных ставок кредитных организаций",
+            "summary": "Результаты мониторинга ставок по вкладам физических лиц: средняя ставка в октябре — 13,06%.",
+            "content": "Публикация Банка России о максимальных ставках по вкладам физических лиц.",
+            "confirmed_facts": [],
+            "classifications": {"topics": [], "genres": [], "sentivent_events": [], "events": [], "entities": []},
+        }
+        legacy_key = stage6._hash({
+            "version": "stage6-rules-v8",
+            "day": self.today.isoformat(),
+            "profile": fuel_company,
+            "event": event,
+            "network": {},
+        })
+        stale_result = {
+            "event_id": event["event_id"],
+            "title": event["title"],
+            "score": 56.2,
+            "score_kind": "priority_to_review_not_impact_probability",
+            "relevance_score": 38,
+            "event_importance": 68,
+            "status": "weak_match",
+            "ranking_tier": 2,
+            "impact_direction": "unclear",
+            "reasons": [{"signal": "bank_product", "field": "CL_PRODUCT_DEP_MARK", "text": "Устаревшее совпадение депозитного продукта."}],
+            "chains": [],
+        }
+        connection = stage6._connect_cache(self.cache)
+        connection.execute(
+            "INSERT INTO ranking_cache(company_id,event_id,cache_key,result_json,computed_at) VALUES (?,?,?,?,?)",
+            (fuel_company["SYNTHETIC_U"], event["event_id"], legacy_key, json.dumps(stale_result), "2026-10-20T00:00:00+00:00"),
+        )
+        connection.commit()
+        connection.close()
+
+        result = stage6.rank_personalized_events(fuel_company, [event], cache_path=self.cache, today=self.today)[0]
+
+        self.assertFalse(result["cache_hit"])
+        self.assertEqual("no_confirmed_match", result["status"])
+        self.assertNotIn("bank_product", {reason["signal"] for reason in result["reasons"]})
+
     def test_exact_confirmed_region_entity_can_match_profile_region(self) -> None:
         event = {**self.event, "classifications": {**self.event["classifications"], "entities": [{
             "label": "г. Москва", "status": "confirmed_fact", "semantic_status": "supported", "quote_valid": True,

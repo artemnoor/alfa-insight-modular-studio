@@ -10,6 +10,10 @@ function initialSelection() {
   return { company: params.get('company') || DEFAULT_COMPANY, event: params.get('event') || '' }
 }
 
+function defaultFeedEvent(feed: FeedEvent[]) {
+  return feed.find((event) => ['potential_match', 'weak_match'].includes(event.priorityStatus)) || feed[0] || null
+}
+
 function formatRevenue(value?: string | null) {
   if (!value) return 'Нет данных'
   const amount = Number(value)
@@ -150,7 +154,7 @@ export default function InsightApp() {
       .then((data) => {
         setWorkspace(data)
         if (!data.feed.some((event) => event.id === selection.event)) {
-          const nextEvent = data.feed[0]?.id || ''
+          const nextEvent = defaultFeedEvent(data.feed)?.id || ''
           setLocation(activeCompany, nextEvent, false)
         }
       })
@@ -185,7 +189,7 @@ export default function InsightApp() {
 
   const selectedEvent = useMemo(() => {
     if (!workspace || workspace.company.id !== activeCompany) return null
-    return workspace.feed.find((event) => event.id === selection.event) || workspace.feed[0] || null
+    return workspace.feed.find((event) => event.id === selection.event) || defaultFeedEvent(workspace.feed)
   }, [workspace, activeCompany, selection.event])
 
   useEffect(() => {
@@ -246,6 +250,8 @@ export default function InsightApp() {
     if (!query) return events.slice(0, 20)
     return events.filter((event) => `${event.title} ${event.source} ${event.why}`.toLocaleLowerCase('ru-RU').includes(query)).slice(0, 20)
   }, [workspace, eventSearch])
+  const personalizedEvents = visibleEvents.filter((event) => ['potential_match', 'weak_match'].includes(event.priorityStatus))
+  const generalEvents = visibleEvents.filter((event) => !['potential_match', 'weak_match'].includes(event.priorityStatus))
 
   const chooseCompany = (company: CompanyCard) => {
     setCompanyPickerOpen(false)
@@ -269,6 +275,25 @@ export default function InsightApp() {
     setHistory({ research: [], messages: [] })
     setMessages([])
   }
+
+  const renderEventCards = (events: FeedEvent[]) => (
+    <div className="insight-event-list">
+      {events.map((item) => (
+        <button
+          className={`insight-event-card ${selectedEvent?.id === item.id ? 'is-active' : ''}`}
+          type="button"
+          key={item.id}
+          onClick={() => chooseEvent(item)}
+          aria-current={selectedEvent?.id === item.id ? 'true' : undefined}
+        >
+          <span className="insight-event-topline"><span>{item.source}</span><time dateTime={item.publishedAt || undefined}>{formatDate(item.publishedAt)}</time></span>
+          <strong>{item.title}</strong>
+          <span className="insight-event-why">{item.why}</span>
+          <span className={`insight-priority-label priority-${item.priorityStatus}`}>{priorityLabel(item)}</span>
+        </button>
+      ))}
+    </div>
+  )
 
   const startResearch = async (forceRefresh = false) => {
     if (!selectedEvent || !workspace || researchStartingRef.current || (job && ['queued', 'running'].includes(job.status))) return
@@ -399,53 +424,54 @@ export default function InsightApp() {
             </div>
             <label className="insight-feed-search-label" htmlFor="insight-feed-search">Найти в ленте</label>
             <input id="insight-feed-search" className="insight-feed-search" value={eventSearch} onChange={(event) => setEventSearch(event.target.value)} placeholder="По теме или источнику" />
-            {workspace && <p className="insight-result-count">{workspace.feed.length} событий · отсортированы по приоритету проверки</p>}
+            {workspace && <p className="insight-result-count">{workspace.feed.length} событий · {workspace.feed.filter((event) => ['potential_match', 'weak_match'].includes(event.priorityStatus)).length} с сигналом по профилю</p>}
           </div>
 
-          {workspace?.status.archiveUnavailable && (
-            <div className="insight-inline-note" role="status">{workspace.status.archiveMessage}</div>
-          )}
-          {workspace?.status.networkUnavailable && (
-            <div className="insight-inline-note" role="status">{workspace.status.networkMessage}</div>
-          )}
+          <div className="insight-feed-content">
+            {workspace?.status.archiveUnavailable && (
+              <div className="insight-inline-note" role="status">{workspace.status.archiveMessage}</div>
+            )}
+            {workspace?.status.networkUnavailable && (
+              <div className="insight-inline-note" role="status">{workspace.status.networkMessage}</div>
+            )}
 
-          {loadingWorkspace && (
-            <div className="insight-feed-skeleton" aria-label="Загружаю ленту">
-              {[0, 1, 2, 3].map((item) => <div className="insight-skeleton-card" key={item}><i /><i /><i /></div>)}
-            </div>
-          )}
-          {!loadingWorkspace && workspaceError && (
-            <div className="insight-empty-state" role="alert">
-              <strong>Ленту пока не удалось загрузить</strong>
-              <p>{workspaceError}</p>
-              <button type="button" onClick={() => setReloadToken((value) => value + 1)}>Попробовать снова</button>
-            </div>
-          )}
-          {!loadingWorkspace && !workspaceError && visibleEvents.length === 0 && (
-            <div className="insight-empty-state">
-              <strong>{!activeCompany ? 'Выберите компанию, чтобы открыть персональную ленту' : workspace?.feed.length ? 'Ничего не найдено' : 'Для этой компании пока нет событий'}</strong>
-              <p>{!activeCompany ? 'Лента и анализ будут учитывать профиль выбранной компании.' : 'Попробуйте изменить запрос или выбрать другую компанию.'}</p>
-              {!activeCompany && <button type="button" onClick={() => setCompanyPickerOpen(true)}>Выбрать компанию</button>}
-            </div>
-          )}
-          {!loadingWorkspace && !workspaceError && visibleEvents.length > 0 && (
-            <div className="insight-event-list">
-              {visibleEvents.map((item) => (
-                <button
-                  className={`insight-event-card ${selectedEvent?.id === item.id ? 'is-active' : ''}`}
-                  type="button"
-                  key={item.id}
-                  onClick={() => chooseEvent(item)}
-                  aria-current={selectedEvent?.id === item.id ? 'true' : undefined}
-                >
-                  <span className="insight-event-topline"><span>{item.source}</span><time dateTime={item.publishedAt || undefined}>{formatDate(item.publishedAt)}</time></span>
-                  <strong>{item.title}</strong>
-                  <span className="insight-event-why">{item.why}</span>
-                  <span className={`insight-priority-label priority-${item.priorityStatus}`}>{priorityLabel(item)}</span>
-                </button>
-              ))}
-            </div>
-          )}
+            {loadingWorkspace && (
+              <div className="insight-feed-skeleton" aria-label="Загружаю ленту">
+                {[0, 1, 2, 3].map((item) => <div className="insight-skeleton-card" key={item}><i /><i /><i /></div>)}
+              </div>
+            )}
+            {!loadingWorkspace && workspaceError && (
+              <div className="insight-empty-state" role="alert">
+                <strong>Ленту пока не удалось загрузить</strong>
+                <p>{workspaceError}</p>
+                <button type="button" onClick={() => setReloadToken((value) => value + 1)}>Попробовать снова</button>
+              </div>
+            )}
+            {!loadingWorkspace && !workspaceError && visibleEvents.length === 0 && (
+              <div className="insight-empty-state">
+                <strong>{!activeCompany ? 'Выберите компанию, чтобы открыть персональную ленту' : workspace?.feed.length ? 'Ничего не найдено' : 'Для этой компании пока нет событий'}</strong>
+                <p>{!activeCompany ? 'Лента и анализ будут учитывать профиль выбранной компании.' : 'Попробуйте изменить запрос или выбрать другую компанию.'}</p>
+                {!activeCompany && <button type="button" onClick={() => setCompanyPickerOpen(true)}>Выбрать компанию</button>}
+              </div>
+            )}
+            {!loadingWorkspace && !workspaceError && visibleEvents.length > 0 && (
+              <>
+                {personalizedEvents.length > 0 && <section className="insight-feed-group" aria-label="События с сигналом по профилю">
+                  {!eventSearch.trim() && <h2 className="insight-feed-group-title">Сигнал по профилю</h2>}
+                  {renderEventCards(personalizedEvents)}
+                </section>}
+                {personalizedEvents.length === 0 && !eventSearch.trim() && <div className="insight-empty-state insight-no-personal-signals" role="status">
+                  <strong>Событий с сигналом по профилю пока нет</strong>
+                  <p>Общие публикации доступны ниже; это не означает, что они влияют на компанию.</p>
+                </div>}
+                {generalEvents.length > 0 && <details className="insight-general-events" open={!!eventSearch.trim()}>
+                  <summary>Общие события без найденной связи <span>{generalEvents.length}</span></summary>
+                  <p>Их важность сама по себе не подтверждает связь с компанией.</p>
+                  {renderEventCards(generalEvents)}
+                </details>}
+              </>
+            )}
+          </div>
           <p className="insight-feed-footnote">Приоритет помогает выбрать, что изучить. Это не вероятность ущерба.</p>
         </aside>
 
