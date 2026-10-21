@@ -3,6 +3,9 @@ import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 
 const base = process.env.ALFA_STUDIO_URL || 'http://127.0.0.1:5173'
+const localCompanyIds = (process.env.ALFA_E2E_LOCAL_COMPANY_IDS || '').split(',').map(value => value.trim()).filter(Boolean).slice(0,2)
+const [localCompanyA, localCompanyB] = localCompanyIds.length === 2 ? localCompanyIds : ['U_BUILD', 'U_FINANCE']
+const expectedLocalEventText = process.env.ALFA_E2E_LOCAL_EVENT_TITLE || ''
 const out = path.resolve('output/playwright/modular-studio')
 await mkdir(out, { recursive: true })
 const modules = ['news-collector','news-intelligence','business-intelligence','personalization','impact-analysis','bank-research','ai-agent','evidence-verification','alfa-product']
@@ -25,6 +28,9 @@ try {
   const page = await context.newPage()
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  const productHealthResponse = await page.request.get(`${base}/api/health`)
+  const productHealth = await productHealthResponse.json()
+  const runRealLocalData = Boolean(productHealth.productDataAvailable && localCompanyIds.length === 2)
   await page.goto(`${base}/studio`, { waitUntil: 'networkidle' })
   await page.screenshot({ path: path.join(out,'studio-desktop.png'), fullPage: true })
   const cards = await page.locator('.studio-card').count()
@@ -37,7 +43,7 @@ try {
     if (!backendStatus.includes('доступен')) throw new Error(`${slug}: backend недоступен: ${backendStatus}`)
     if (slug === 'personalization') {
       const localOptionDisabled = await page.locator('.module-mode option[value="local_data"]').evaluate(option => option.disabled)
-      if (!localOptionDisabled) throw new Error('Local Data должна быть недоступна без локального CSV и архива.')
+      if (localOptionDisabled !== !productHealth.productDataAvailable) throw new Error('Доступность Local Data не соответствует подключённым локальным источникам.')
       await page.locator('.module-control select').selectOption('compare')
     }
     if (slug === 'ai-agent' && await page.locator('.module-mode select').inputValue() !== 'fixture') throw new Error('AI Agent Studio должен открываться в бесплатном Fixture режиме без внешнего вызова.')
@@ -62,6 +68,34 @@ try {
     await page.getByRole('button', { name: 'Запустить алгоритм' }).click()
     await page.locator('.module-specific-result, .module-highlights').waitFor({ timeout: 20000 })
     if (slug === 'ai-agent') await page.getByText(/Сравнение запусков в этой сессии/).waitFor({ timeout: 5000 })
+    let localDataStatus = 'not available'
+    if (runRealLocalData && ['business-intelligence', 'personalization', 'bank-research'].includes(slug)) {
+      await page.locator('.module-mode select').selectOption('local_data')
+      if (slug === 'business-intelligence') {
+        await page.getByPlaceholder('ID компании, например U_12345').fill(localCompanyA)
+      } else if (slug === 'personalization') {
+        await page.locator('.module-control textarea').fill(JSON.stringify(localCompanyIds))
+        await page.getByLabel('Лимит событий в Local Data').fill('50')
+      } else {
+        await page.getByPlaceholder('Что искать?').fill('кредитование проектов по защите критической инфраструктуры')
+      }
+      await page.getByRole('button', { name: 'Запустить алгоритм' }).click()
+      await page.locator('.module-specific-result').waitFor({ timeout: 30000 })
+      const localResult = await page.locator('.module-results').innerText()
+      if (slug === 'business-intelligence' && (!localResult.includes(localCompanyA) || !localResult.includes('local source CSVs (read only)'))) throw new Error(`Business Intelligence не показал выбранную компанию из Local Data. Результат: ${localResult.slice(-1400)}`)
+      if (slug === 'personalization' && (!localResult.includes(localCompanyA) || !localResult.includes(localCompanyB) || !localResult.includes('Одинаковые события'))) throw new Error('Local Data не сравнил общий архив для двух выбранных компаний.')
+      if (slug === 'bank-research' && (!localResult.includes('кредитование проектов по защите критической инфраструктуры') || !localResult.includes('local bank knowledge index (read only)'))) throw new Error('Bank Research не выполнил запрос по реальному локальному индексу.')
+      localDataStatus = 'PASS'
+      if (slug === 'personalization') {
+        await page.screenshot({ path: path.join(out,'personalization-local-data.png'), fullPage: true })
+        await page.locator('.module-control textarea').fill('{broken json')
+        await page.getByRole('button', { name: 'Запустить алгоритм' }).click()
+        await page.locator('.module-error[role="alert"]').waitFor({ timeout: 5000 })
+        if (!(await page.locator('.module-error').innerText()).includes('Проверьте JSON')) throw new Error('Некорректный ввод не получил понятное сообщение об ошибке.')
+        await page.screenshot({ path: path.join(out,'personalization-input-error.png'), fullPage: true })
+        localDataStatus = 'PASS (invalid JSON handled)'
+      }
+    }
     const width = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
     if (width.content > width.viewport) throw new Error(`${slug}: горизонтальное переполнение ${JSON.stringify(width)}`)
     await page.setViewportSize({ width: 1280, height: 900 })
@@ -69,16 +103,56 @@ try {
     if (laptopWidth.content > laptopWidth.viewport) throw new Error(`${slug}: переполнение ноутбука ${JSON.stringify(laptopWidth)}`)
     await page.setViewportSize({ width: 1440, height: 960 })
     if (slug === 'personalization' || slug === 'ai-agent') await page.screenshot({ path: path.join(out,`${slug}-desktop.png`), fullPage: true })
-    results.push({ slug, heading, runStatus, suiteStatus, testScenarioCount, width, laptopWidth })
+    results.push({ slug, heading, runStatus, suiteStatus, testScenarioCount, localDataStatus, width, laptopWidth })
   }
   await page.goto(`${base}/`, { waitUntil: 'networkidle' })
-  const productText = await page.locator('body').innerText()
-  await page.screenshot({ path: path.join(out,'product-direct.png'), fullPage: true })
-  if (!productText.includes('Что происходит вокруг бизнеса') || !productText.includes('Выбрать компанию')) throw new Error('Прямой маршрут продукта не открыл основной пользовательский экран.')
-  await page.getByRole('button', { name: 'Выбрать компанию', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Выбор компании' }).waitFor()
-  await page.getByText('Список компаний временно недоступен. Подключите локальные профили компаний.').waitFor()
-  results.push({ slug: 'product-direct', status: 'loaded; company list unavailable because local profile CSV is absent in this clone' })
+  if (!runRealLocalData) {
+    const productText = await page.locator('body').innerText()
+    await page.screenshot({ path: path.join(out,'product-direct.png'), fullPage: true })
+    if (!productText.includes('Что происходит вокруг бизнеса') || !productText.includes('Выбрать компанию')) throw new Error('Прямой маршрут продукта не открыл основной пользовательский экран.')
+    if (!productHealth.productDataAvailable) {
+      await page.getByRole('button', { name: 'Выбрать компанию', exact: true }).click()
+      await page.getByRole('dialog', { name: 'Выбор компании' }).waitFor()
+      await page.getByText('Список компаний временно недоступен. Подключите локальные профили компаний.').waitFor()
+      results.push({ slug: 'product-direct', status: 'BLOCKED; local company profiles unavailable' })
+    } else results.push({ slug: 'product-direct', status: 'PARTIAL; set ALFA_E2E_LOCAL_COMPANY_IDS to exercise real company workflows' })
+  } else {
+    await page.locator('.insight-company-trigger').click()
+    await page.locator('#insight-company-search').fill(localCompanyA)
+    await page.locator('.insight-company-options [role="option"]').filter({ hasText: localCompanyA }).first().click()
+    await page.locator('.insight-event-card').first().waitFor({ timeout: 30000 })
+    const selectedCompany = await page.locator('.insight-company-id').innerText()
+    if (!selectedCompany.includes(localCompanyA)) throw new Error('Клиентский продукт не сохранил выбранную компанию.')
+    await page.locator('.insight-event-card').first().click()
+    await page.locator('.insight-event-title').waitFor()
+    const eventTitle = await page.locator('.insight-event-title').innerText()
+    if (expectedLocalEventText && !eventTitle.includes(expectedLocalEventText)) throw new Error(`Не найден ожидаемый фрагмент заголовка события: ${eventTitle}`)
+    await page.locator('.insight-sources summary').click()
+    const sourcesText = await page.locator('.insight-sources').innerText()
+    if (!sourcesText.includes('Профиль компании') || !sourcesText.includes('Аналитика Альфа-Банка')) throw new Error('Источники события не показывают карточку компании и банковский раздел.')
+    const sourceLinks = await page.locator('.insight-sources a[href]').count()
+    await page.locator('.insight-research-button').click()
+    await page.locator('.insight-research-result').waitFor({ timeout: 30000 })
+    const researchText = await page.locator('.insight-research-result').innerText()
+    if (!researchText.includes('Локальная проверка завершена') || !researchText.includes('Профиль компании')) throw new Error('Продукт не завершил локальное исследование на выбранном событии.')
+    await page.locator('#insight-chat-question').fill('Какие данные подтверждают этот вывод?')
+    await page.getByRole('button', { name: 'Отправить' }).click()
+    await page.locator('.insight-chat-message.message-assistant').last().waitFor({ timeout: 30000 })
+    const chatText = await page.locator('.insight-chat-message.message-assistant').last().innerText()
+    if (!chatText.trim()) throw new Error('Локальный чат не вернул ответ.')
+    await page.locator('.insight-history summary').click()
+    await page.locator('.insight-history-item').first().waitFor({ timeout: 10000 })
+    await page.screenshot({ path: path.join(out,'product-local-data.png'), fullPage: true })
+    await page.locator('.insight-company-trigger').click()
+    await page.locator('#insight-company-search').fill(localCompanyB)
+    await page.locator('.insight-company-options [role="option"]').filter({ hasText: localCompanyB }).first().click()
+    await page.locator('.insight-event-card').first().waitFor({ timeout: 30000 })
+    const switchedCompany = await page.locator('.insight-company-id').innerText()
+    if (!switchedCompany.includes(localCompanyB) || !page.url().includes(`company=${localCompanyB}`)) throw new Error('Переключение компании не обновило контекст продукта и URL.')
+    await page.locator('.insight-company-context').waitFor()
+    if (!(await page.locator('.insight-company-context').innerText()).includes(localCompanyB)) throw new Error('Карточка события осталась привязана к предыдущей компании.')
+    results.push({ slug: 'product-direct', status: 'PASS', companyId: selectedCompany, eventTitle, sourceLinks, researchMode: 'local_demo', chat: 'PASS', history: 'PASS', companySwitch: 'PASS', switchedCompany })
+  }
   const mobile = await context.newPage()
   await mobile.setViewportSize({ width: 390, height: 844 })
   await mobile.goto(`${base}/studio`, { waitUntil: 'networkidle' })
@@ -94,7 +168,17 @@ try {
   await mobile.screenshot({ path: path.join(out,'personalization-mobile-390.png'), fullPage: true })
   const moduleMobileWidth = await mobile.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
   if (moduleMobileWidth.content > moduleMobileWidth.viewport) throw new Error(`Мобильная персонализация переполняет ширину: ${JSON.stringify(moduleMobileWidth)}`)
-  console.log(JSON.stringify({ status: 'PASS', cards, results, mobileWidth, moduleMobileWidth, errors, screenshots: out }, null, 2))
+  let productMobileWidth = null
+  if (runRealLocalData) {
+    await mobile.goto(`${base}/?company=${localCompanyA}`, { waitUntil: 'networkidle' })
+    await mobile.locator('.insight-event-card').first().waitFor({ timeout: 30000 })
+    await mobile.locator('.insight-event-card').first().click()
+    await mobile.locator('.insight-event-title').waitFor({ timeout: 30000 })
+    productMobileWidth = await mobile.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
+    if (productMobileWidth.content > productMobileWidth.viewport) throw new Error(`Мобильный клиентский продукт переполняет ширину: ${JSON.stringify(productMobileWidth)}`)
+    await mobile.screenshot({ path: path.join(out,'product-mobile-390.png'), fullPage: true })
+  }
+  console.log(JSON.stringify({ status: 'PASS', cards, results, mobileWidth, moduleMobileWidth, productMobileWidth, errors, screenshots: out }, null, 2))
   if (errors.length) process.exitCode = 1
 } finally {
   await browser.close()

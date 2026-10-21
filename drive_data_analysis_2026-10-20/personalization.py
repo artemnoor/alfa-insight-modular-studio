@@ -12,9 +12,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from local_data_paths import news_archive_sqlite
 
 ROOT = Path(__file__).resolve().parent
-ARCHIVE_DB_PATH = ROOT.parent / "data" / "news_pipeline.sqlite"
+ARCHIVE_DB_PATH = news_archive_sqlite()
 CACHE_DB_PATH = ROOT.parent / "data" / "personalization_cache.sqlite3"
 RANKING_VERSION = "stage6-rules-v9"
 ANALYSIS_CACHE_VERSION = "stage6-deep-analysis-v1"

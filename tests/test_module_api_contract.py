@@ -1,9 +1,11 @@
 import os
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from shared.backend.modules_api import MODULES, _external_validation, dispatch
+from shared.backend.modules_api import MODULES, _external_validation, _local_data_available, dispatch
 
 
 class ModuleApiContractTests(unittest.TestCase):
@@ -45,6 +47,25 @@ class ModuleApiContractTests(unittest.TestCase):
             status, result = dispatch("POST", "/api/modules/personalization/run", {"mode": "local_data"})
         self.assertEqual(status, 409)
         self.assertEqual(result["error"]["code"], "LOCAL_DATA_UNAVAILABLE")
+
+    def test_local_data_registry_enables_only_modules_with_required_source_files(self):
+        with patch("shared.backend.modules_api.company_profiles_csv") as profiles, \
+             patch("shared.backend.modules_api.person_links_csv") as links, \
+             patch("shared.backend.modules_api.payments_csv") as payments, \
+             patch("shared.backend.modules_api.news_archive_sqlite") as news, \
+             patch("shared.backend.modules_api.bank_knowledge_base") as bank:
+            with tempfile.TemporaryDirectory(prefix="alfa-local-paths-test-") as folder:
+                root = Path(folder)
+                paths = [root / name for name in ("profiles.csv","links.csv","payments.csv","news.sqlite","kb.json")]
+                for path in paths:
+                    path.touch()
+                profiles.return_value, links.return_value, payments.return_value, news.return_value, bank.return_value = paths
+                self.assertTrue(_local_data_available("business-intelligence"))
+                self.assertTrue(_local_data_available("personalization"))
+                self.assertTrue(_local_data_available("bank-research"))
+                self.assertFalse(_local_data_available("ai-agent"))
+                bank.return_value = root / "missing.json"
+                self.assertFalse(_local_data_available("bank-research"))
 
     def test_external_ai_cost_must_be_reported_and_within_budget(self):
         base = {"planHistory": [{"version": 1}], "budgetRub": 1.0}

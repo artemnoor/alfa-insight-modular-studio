@@ -26,15 +26,37 @@ def run(payload):
 
 def run_local(payload):
     from stage1_analyzer import load_companies
-    company_id=str(payload.get("company_id") or "U_9250")
+    raw_ids=payload.get("company_ids")
+    if not isinstance(raw_ids,list):
+        raw_ids=[payload.get("company_id")] if payload.get("company_id") else []
+    company_ids=list(dict.fromkeys(str(value).strip() for value in raw_ids if str(value).strip()))
+    if not 1 <= len(company_ids) <= 2: raise ValueError("Укажите один или два ID компаний для сравнения.")
     frame=load_companies()
-    match=frame.loc[frame["SYNTHETIC_U"]==company_id]
-    if len(match)!=1: raise ValueError("Компания не найдена или профиль неоднозначен.")
-    profile={str(k):str(v or "") for k,v in match.iloc[0].drop(labels=["_search","_revenue_sort"]).items()}
+    profiles=[]
+    for company_id in company_ids:
+        match=frame.loc[frame["SYNTHETIC_U"]==company_id]
+        if len(match)!=1: raise ValueError(f"Компания {company_id} не найдена или профиль неоднозначен.")
+        profiles.append({str(k):str(v or "") for k,v in match.iloc[0].drop(labels=["_search","_revenue_sort"]).items()})
     events=personalization.load_structured_events()
     if not events: raise ValueError("В локальном архиве нет обработанных новостей.")
-    events=events[:max(1,min(int(payload.get("limit",50)),100))]
+    limit=max(1,min(int(payload.get("limit",50)),100))
+    networks={company_id:None for company_id in company_ids}
+    graph_status="source CSVs unavailable"
+    try:
+        from local_data_paths import company_profiles_csv, person_links_csv, payments_csv
+        if all(path.is_file() for path in (company_profiles_csv(),person_links_csv(),payments_csv())):
+            import business_graph
+            business_graph.ensure_database()
+            for company_id in company_ids:
+                networks[company_id]=business_graph.get_company_network(company_id)
+            graph_status="available"
+    except Exception as exc:
+        graph_status=f"unavailable: {type(exc).__name__}"
     with tempfile.TemporaryDirectory(prefix="alfa-personalization-local-") as temp:
-        ranked=personalization.rank_personalized_events(profile,events,cache_path=Path(temp)/"ranking.sqlite")
-    return {"companies":[{"companyId":company_id,"rankedEvents":ranked}],"eventCount":len(events),"profileSummary":{"industry":profile.get("MAINOKVED_NAME"),"region":profile.get("REGION")},"provenance":{"kind":"local files (read only)","sources":["stage1_analyzer.load_companies","personalization.load_structured_events","personalization.rank_personalized_events"],"externalCalls":0,"writes":"temporary cache only"}}
+        ranked_companies=[]
+        for profile in profiles:
+            company_id=profile["SYNTHETIC_U"]
+            ranked=personalization.rank_personalized_events(profile,events,network=networks[company_id],cache_path=Path(temp)/(company_id+".sqlite"))
+            ranked_companies.append({"companyId":company_id,"rankedEvents":ranked[:limit],"networkStatus":graph_status})
+    return {"companies":ranked_companies,"eventCount":len(events),"returnedLimit":limit,"provenance":{"kind":"local files (read only)","sources":["stage1_analyzer.load_companies","personalization.load_structured_events","personalization.rank_personalized_events","business_graph.get_company_network"],"networkStatus":graph_status,"externalCalls":0,"writes":"temporary ranking cache only; graph cache stays in this workspace"}}
 

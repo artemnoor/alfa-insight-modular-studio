@@ -29,3 +29,12 @@ def run(payload):
             for key,value in zip(names,old): setattr(graph,key,value)
     return {"companyId":company_id,"profileStatus":result.get("profile_status"),"profile":result.get("profile"),"metrics":result.get("metrics"),"directConnections":result.get("direct_connections"),"graph":result.get("graph"),"importStats":{k:imported.get(k) for k in ("profile_rows","person_link_rows","payment_rows","company_nodes")},"interpretationLimitations":result.get("limitations",[]),"provenance":{"kind":"synthetic CSV fixtures","sources":["business_graph.ensure_database","business_graph.get_company_network"],"writes":"temporary only"}}
 
+def run_local(payload):
+    company_id=str(payload.get("company_id") or "U_9250")
+    imported=graph.ensure_database()
+    try:
+        result=graph.get_company_network(company_id)
+    except KeyError as exc:
+        raise ValueError("Компания не найдена или её профиль неоднозначен в локальных источниках.") from exc
+    return {"companyId":company_id,"profileStatus":result.get("profile_status"),"profile":result.get("profile"),"metrics":result.get("metrics"),"directConnections":result.get("direct_connections"),"graph":result.get("graph"),"importStats":{k:imported.get(k) for k in ("profile_rows","person_link_rows","payment_rows","company_nodes")},"interpretationLimitations":result.get("limitations",[]),"provenance":{"kind":"local source CSVs (read only)","sources":["business_graph.ensure_database","business_graph.get_company_network"],"writes":"derived SQLite cache in this workspace only"}}
+

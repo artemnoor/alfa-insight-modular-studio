@@ -21,3 +21,11 @@ def run(payload):
     finally: stage2_rag.load_index=old
     return {"query":query,**result,"limitations":["Терминологическое совпадение само по себе не подтверждает применимость к событию."],"provenance":{"kind":"synthetic documents","sources":["stage2_rag.retrieve (BM25)"],"externalCalls":0}}
 
+def run_local(payload):
+    query=str(payload.get("query") or "").strip()
+    if not query: raise ValueError("Введите поисковый запрос.")
+    try: top_k=int(payload.get("top_k",5))
+    except (TypeError,ValueError): raise ValueError("Количество результатов должно быть целым числом.")
+    result=stage2_rag.retrieve(query,"",top_k=max(1,min(top_k,20)))
+    return {"query":query,**result,"limitations":["BM25 оценивает лексическое совпадение. Применимость к событию проверяется отдельно."],"provenance":{"kind":"local bank knowledge index (read only)","sources":[str(stage2_rag.KB_PATH.name),"stage2_rag.retrieve (BM25)"],"externalCalls":0,"writes":"none"}}
+

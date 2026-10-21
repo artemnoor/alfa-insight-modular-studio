@@ -6,7 +6,7 @@ import './module-result.css'
 import './module-result-layout.css'
 
 export type ModuleField = { name: string; label: string; kind?: 'text' | 'number' | 'json'; initial?: string; placeholder?: string; rows?: number; min?: number; max?: number; externalOnly?: boolean }
-export type ModuleSpec = { id: string; title: string; summary: string; purpose: string; fields: ModuleField[]; highlights: { label: string; path: string }[]; renderResult?: (data: Record<string, any>) => ReactNode; localData?: boolean; externalAi?: boolean; productLink?: boolean }
+export type ModuleSpec = { id: string; title: string; summary: string; purpose: string; fields: ModuleField[]; highlights: { label: string; path: string }[]; renderResult?: (data: Record<string, any>) => ReactNode; localData?: boolean; localCompanyIds?: boolean; localFields?: string[]; externalAi?: boolean; productLink?: boolean }
 type Scenario = { id: string; name: string; description?: string; input?: Record<string, unknown> }
 type Props = { spec: ModuleSpec }
 
@@ -62,13 +62,16 @@ export function ModuleWorkbench({ spec }: Props) {
   }, [spec.id])
 
   const selectedScenario = useMemo(() => scenarios.find(row => row.id === selected), [scenarios, selected])
+  const isLocalField = (field: ModuleField) => field.name === 'limit' || field.name === 'company_id' || (spec.localCompanyIds && field.name === 'company_ids') || Boolean(spec.localFields?.includes(field.name))
   const customInput = (includeDefaults = false) => {
     const value: Record<string, unknown> = {}
     for (const field of spec.fields) {
       if (field.externalOnly && mode !== 'external_ai') continue
+      if (mode === 'local_data' && !isLocalField(field)) continue
+      if (mode === 'local_data' && field.name === 'company_id' && !(field.name in fields)) continue
       if (!(field.name in fields) && !includeDefaults) continue
       const raw = fields[field.name] ?? (() => {
-        const scenarioValue = selectedScenario?.input?.[field.name]
+        const scenarioValue = mode === 'fixture' ? selectedScenario?.input?.[field.name] : undefined
         if (scenarioValue !== undefined) return field.kind === 'json' ? JSON.stringify(scenarioValue) : String(scenarioValue)
         return field.initial ?? ''
       })()
@@ -128,9 +131,9 @@ export function ModuleWorkbench({ spec }: Props) {
       <form className="module-panel module-inputs" onSubmit={run}>
         <div className="module-panel-title"><div><h2>Входные данные</h2><p>{spec.purpose}</p></div></div>
         {mode === 'fixture' && <label className="module-control"><span>Подготовленный сценарий</span><select value={selected} onChange={event => setSelected(event.target.value)}><option value="">Свои данные</option>{scenarios.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>{selectedScenario?.description && <small>{selectedScenario.description}</small>}</label>}
-        {mode === 'local_data' && <label className="module-control"><span>Компания для локального запуска</span><input value={fields.company_id ?? 'U_9250'} onChange={event => setFields(previous => ({ ...previous, company_id: event.target.value }))} placeholder="U_9250" /></label>}
-        {spec.fields.filter(field => (!field.externalOnly || mode === 'external_ai') && (mode !== 'local_data' || field.name === 'limit')).map(field => {
-          const scenarioValue = selectedScenario?.input?.[field.name]
+        {mode === 'local_data' && !spec.localCompanyIds && <label className="module-control"><span>Компания для локального запуска</span><input value={fields.company_id ?? ''} onChange={event => setFields(previous => ({ ...previous, company_id: event.target.value }))} placeholder="ID компании, например U_12345" /></label>}
+        {spec.fields.filter(field => (!field.externalOnly || mode === 'external_ai') && (mode !== 'local_data' || isLocalField(field))).map(field => {
+          const scenarioValue = mode === 'fixture' ? selectedScenario?.input?.[field.name] : undefined
           const scenarioDisplay = scenarioValue === undefined ? undefined : field.kind === 'json' ? JSON.stringify(scenarioValue, null, 2) : String(scenarioValue)
           const visibleValue = fields[field.name] ?? scenarioDisplay ?? field.initial ?? ''
           return <label className="module-control" key={field.name}><span>{field.label}</span>{field.kind === 'json' || (field.rows && field.rows > 1) ? <textarea rows={field.rows || 5} value={visibleValue} placeholder={field.placeholder} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))} /> : <input type={field.kind === 'number' ? 'number' : 'text'} min={field.min} max={field.max} value={visibleValue} placeholder={field.placeholder} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))} />}</label>

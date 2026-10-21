@@ -1,3 +1,3 @@
 # 03-business-intelligence
 
-Isolated workspace for **business-intelligence**. Open /studio/business-intelligence in Studio. Run its fixture suite with npm run test:module -- business-intelligence. The adapter invokes the existing algorithm owner; fixtures are synthetic. External AI is disabled.
+Изолированное рабочее пространство Business Intelligence. Маршрут: `/studio/business-intelligence`; тесты: `npm run test:module -- business-intelligence`. `Fixture` строит граф на временных CSV/SQLite. `Local Data` читает профили, person links и payment CSV из `ALFA_INSIGHT_DATA_ROOT`; производный `business_network.sqlite` создаётся в локальном `data/` текущего клона. Исходные файлы не меняются. Платёжный поток не доказывает поставку, а общий GROUP_ID — корпоративный контроль.

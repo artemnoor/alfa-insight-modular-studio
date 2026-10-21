@@ -10,7 +10,9 @@ import pandas as pd
 import requests
 
 ROOT = Path(__file__).resolve().parent
-COMPANIES_CSV = ROOT / "df_Uid_data_hack.csv"
+from local_data_paths import company_profiles_csv
+
+COMPANIES_CSV = company_profiles_csv()
 MODEL = "deepseek/deepseek-v4.1-flash-1017"
 API_URL = "https://polza.ai/api/v1/chat/completions"
 

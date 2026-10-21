@@ -1,49 +1,43 @@
-# Результаты модульных проверок
+# Modular Studio test report
 
-**Дата:** 2026-10-21. **Живой AI:** одна ручная попытка запуска на синтетической фикстуре с лимитом 1 ₽; API не вернул ответ за 125 секунд, итог и фактическая стоимость неизвестны. Повторного запуска не было. **Тестовые данные:** синтетические, базы/кэши создавались только во временных каталогах.
+**Date:** 2026-10-21. **Runtime:** Node 22.13, Python 3.11, Chromium. **External AI:** disabled. **Local data:** read-only source paths supplied at launch; derived graph cache and test history stayed in this clone.
 
-## Backend и сборка
+## Results
 
-| Проверка | Результат | Подтверждение |
+| Check | Status | Evidence |
 |---|---|---|
-| `npm run build` | PASS | TypeScript и Vite production build, 535 модулей |
-| Python regression | PASS | 93 теста |
-| Module API contract | PASS | 6 тестов: v1 registry/health, стабильные ошибки, режимы Local Data/External AI, fail-closed при неизвестной стоимости и запрет параллельного повторного платного запуска |
-| Живой External AI из браузера | BLOCKED | Одна ручная попытка, только синтетический профиль/новость, лимит запроса 1 ₽. Не получен ответ API за 125 с; число завершённых обращений к провайдеру и стоимость неизвестны, повторов не было. После попытки opt-in отключён. |
-| T08 unit | PASS | 13 тестов |
-| T09 unit | PASS | 16 тестов |
-| T10 unit | PASS | 67 тестов |
-| Pipeline unit | PASS | 7 тестов |
-| Fixture module tests | PASS | 9 отдельных команд; 18 adapter/API test cases и 28 сценариев (не менее 3 на модуль) |
-| `npm run test:all` | PASS | Сборка, 6 API contract tests, 94 старых Python-теста, старые T08/T09/T10/pipeline и 9 изолированных модулей |
+| `npm run test:all` | PASS | Build; 7 API contract tests; 94 existing Python tests; T08 13, T09 16, T10 67, pipeline 7; all 9 module suites. |
+| `npm run build` | PASS | TypeScript + Vite, 535 modules transformed. |
+| Module fixture scenarios | PASS | 28 scenarios across 9 modules (AI Agent has 4, each other module has 3); real in-process algorithms are used where available. |
+| Studio Chromium E2E | PASS | 9 cards/routes; run, fixture suite and repeat for each; 0 browser console/page errors. |
+| Local Data UI | PASS | Real company graph, same-event personalization comparison for two configured companies, and BM25 query against the configured 181-chunk bank index. External calls: 0. |
+| Product path | PASS | Company selection, 20-event feed, critical-infrastructure lending event, source disclosure, local research, local chat, research history, and company switch. |
+| Responsive layout | PASS | 1440, 1280, and 390 px; no horizontal overflow in Studio, module, or product pages. |
+| Standalone commands | PASS | `npm run studio:module -- personalization` opened its direct route; `npm run product` opened `/`. |
+| Live external AI | BLOCKED | One prior authorized synthetic-only attempt timed out at 125 s; final provider cost was not reported. It was not repeated; external opt-in remains off. |
 
-## Изолированные модули
+Fixture suites use synthetic profiles and documents. The Local Data browser run uses the environment variable `ALFA_E2E_LOCAL_COMPANY_IDS`; the optional `ALFA_E2E_LOCAL_EVENT_TITLE` narrows the product event assertion. Neither value is stored in this report or test source.
 
-| Модуль | Fixture suite | Результат алгоритма | Ограничение |
-|---|---:|---|---|
-| 01 News Collector | 3/3 PASS | RSS parse, exact URL/id dedup, временная SQLite, пустая лента и дата | Сетевой fetch реальных RSS не вызывался |
-| 02 News Intelligence | 3/3 PASS | T08 candidate choice normalization и 4096-D T09 local vector | Полный T08 `classifyNews` требует одобренную внешнюю модель; не запускался |
-| 03 Business Intelligence | 3/3 PASS | Настоящие graph importer и агрегаты на synthetic CSV | Рабочие CSV не включены в клоне |
-| 04 Personalization | 3/3 PASS | Настоящий `rank_personalized_events`, сравнение synthetic профилей | Local Data недоступен без локальных профиля и архива |
-| 05 Impact Analysis | 3/3 PASS | Настоящие evidence guards и `unclear` на целевом кредите/недостающем тексте | Генерация свежего AI анализа вне адаптера |
-| 06 Bank Research / RAG | 3/3 PASS | Настоящий BM25 `retrieve`, страница, matched terms, пустой запрос | Индекс Alpha Bank документов отсутствует, используются fixture chunks |
-| 07 AI Agent Studio | 4/4 PASS (Fixture); живой запуск BLOCKED | Fixture гоняет настоящий `run_agent`, версии плана, инструменты и пропуск шага. Одну живую попытку на synthetic-only входе запустили вручную через браузер, лимит 1 ₽ | Внешний запуск не вернул ответ за 125 с; стоимость неизвестна, повторов нет. Fixture ответы стоят 0 ₽, history временная |
-| 08 Evidence Verification | 3/3 PASS | Настоящая exact quote/source ID проверка | Семантическая и числовая независимая проверка не исполнялась |
-| 09 Alfa Insight Product | 3/3 PASS | Контракт сохраняет прямой маршрут и пользовательские flows | Интерактивный путь заблокирован отсутствием локальных профилей компаний |
+## Per-module status
 
-## Браузерный E2E (Playwright Chromium)
+| Module | Fixture UI/API | Local Data | Limitation |
+|---|---|---|---|
+| 01 News Collector | PASS, 3 scenarios | N/A | Real RSS network fetch is not exercised by the isolated suite. |
+| 02 News Intelligence | PASS, 3 scenarios | N/A | Full model-backed T08 classification is not run; T08 choice normalization and T09 local vectors are exercised. |
+| 03 Business Intelligence | PASS, 3 scenarios | PASS | Reads configured CSVs and builds the derived graph cache in this clone. |
+| 04 Personalization | PASS, 3 scenarios | PASS | Same archive event gets different priority/status and profile explanations. There is no independent gold ranking set, so Precision@K/Recall@K/NDCG are not reported. |
+| 05 Impact Analysis | PASS, 3 scenarios | N/A | Tests real evidence guards; does not generate a new model-based analysis. |
+| 06 Bank Research / RAG | PASS, 3 scenarios | PASS | Real BM25 call completed against local chunks. The top result for the tested infrastructure-credit query was a general macroeconomic page, showing that retrieval relevance needs work. |
+| 07 AI Agent Studio | PASS, 4 scenarios | Fixture only | Fixture runs the actual orchestrator with deterministic tool responses and adaptive replanning. External AI remains blocked after the earlier timeout. |
+| 08 Evidence Verification | PASS, 3 scenarios | N/A | Exact quote/source verification runs; independent semantic and numeric contradiction checks are not present. |
+| 09 Alfa Insight Product | PASS, 3 contract scenarios + live local UI | PASS, local demo | Research/chat run with local evidence and zero external calls; this does not validate external-model answer quality. |
 
-`npm run test:e2e:studio` — PASS. Проверены 9 карточек и 9 прямых маршрутов, запуск выбранного сценария, три module tests и повторный запуск каждого модуля. Продукт открылся на `/`, открыл диалог компании и показал состояние отсутствующих профилей. Отдельная ручная попытка External AI не завершилась ответом API за 125 с; её нельзя считать успешной E2E проверкой.
+## Browser captures
 
-| Viewport | Страница | Проверка |
-|---:|---|---|
-| 1440 px | Все модули | PASS; content width 1440 px |
-| 1280 px | Все модули | PASS; content width 1280 px |
-| 390 px | Studio главная | PASS; content width 390 px |
-| 390 px | Personalization | PASS; content width 390 px |
+Chromium captures are in `output/playwright/modular-studio/`: `studio-desktop.png`, `personalization-local-data.png`, `personalization-input-error.png`, `ai-agent-desktop.png`, `product-local-data.png`, `studio-mobile-390.png`, `personalization-mobile-390.png`, and `product-mobile-390.png`.
 
-Page errors/console errors: 0. Снимки Chromium: `output/playwright/modular-studio/studio-desktop.png`, `personalization-desktop.png`, `ai-agent-desktop.png`, `product-direct.png`, `studio-mobile-390.png`, `personalization-mobile-390.png`.
+`output/` is ignored by Git. Screenshots that show local profile or event data remain local and are not published with the repository. No client CSV, source SQLite archive, or bank knowledge JSON was copied into Git.
 
-## Разделение результатов
+## Interpretation
 
-Все PASS выше относятся к fixture/in-process проверкам и наличным UI-контрактам. Живой AI запуск остался BLOCKED, его стоимость не подтверждена. Повторный параллельный запуск защищён lock-ом API, а интерфейс теперь показывает таймаут и просит не отправлять повтор до освобождения сервера. Проверки не подтверждают качество свежего внешнего T08 ответа, полноту отсутствующего банковского индекса, живой сетевой RSS fetch или работу на отсутствующих клиентских профилях. T09/T10/Postgres integration suites не запускались, поскольку эти сервисы и БД не требуются для Studio fixtures и отдельной конфигурации интеграции в клоне нет.
+The product and all nine workspaces open and execute their supported fixture flows. Modules 03, 04, and 06 also ran against configured local files, and the product completed a local research/chat path. PASS means the interface executed the tested path; it does not assert that all source data is complete or that every AI/RAG result is semantically correct. In particular, the observed BM25 result was not a direct answer to the query.

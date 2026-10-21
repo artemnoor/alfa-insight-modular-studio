@@ -15,6 +15,8 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "drive_data_analysis_2026-10-20"))
+from local_data_paths import bank_knowledge_base, company_profiles_csv, news_archive_sqlite, payments_csv, person_links_csv
+
 MODULES = [
     ("news-collector", "01-news-collector", "Сбор новостей", "Источники, качество публикаций и дубликаты."),
     ("news-intelligence", "02-news-intelligence", "News Intelligence", "T08-нормализация и локальная T09-векторизация."),
@@ -51,10 +53,13 @@ def _scenarios(slug: str) -> list[dict[str, Any]]:
 
 
 def _local_data_available(slug: str) -> bool:
-    if slug != "personalization":
-        return False
-    return ((ROOT / "drive_data_analysis_2026-10-20" / "df_Uid_data_hack.csv").is_file()
-            and (ROOT / "data" / "news_pipeline.sqlite").is_file())
+    if slug == "personalization":
+        return company_profiles_csv().is_file() and news_archive_sqlite().is_file()
+    if slug == "business-intelligence":
+        return all(path.is_file() for path in (company_profiles_csv(), person_links_csv(), payments_csv()))
+    if slug == "bank-research":
+        return bank_knowledge_base().is_file()
+    return False
 
 
 def _external_ai_available(slug: str) -> bool:

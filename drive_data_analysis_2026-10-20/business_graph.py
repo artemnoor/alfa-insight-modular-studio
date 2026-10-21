@@ -13,13 +13,14 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
 
+from local_data_paths import company_profiles_csv, payments_csv, person_links_csv
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT.parent / "data"
 DB_PATH = DATA_DIR / "business_network.sqlite"
-PROFILE_CSV = ROOT / "df_Uid_data_hack.csv"
-PERSON_LINK_CSV = ROOT / "df_Fid_Uid_link_hack.csv"
-PAYMENT_CSV = ROOT / "df_Uid_payment_hack.csv"
+PROFILE_CSV = company_profiles_csv()
+PERSON_LINK_CSV = person_links_csv()
+PAYMENT_CSV = payments_csv()
 SCHEMA_VERSION = 1
 PAY_AMT_SCALE = 10  # PAY_AMT has one decimal place in the supplied source.
 PAY_AMT_SOURCE_UNIT = "единицы PAY_AMT; валюта и период в CSV не указаны"

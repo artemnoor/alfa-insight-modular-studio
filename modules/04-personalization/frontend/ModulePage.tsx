@@ -25,9 +25,10 @@ export const moduleSpec = {
   "fields": [
     {
       "name": "company_ids",
-      "label": "ID компаний (JSON-массив)",
+      "label": "ID компаний (JSON-массив, до двух)",
       "kind": "json",
-      "initial": "[\"U_BUILD\",\"U_FINANCE\"]",
+      "initial": "[]",
+      "placeholder": "[\"ID_1\",\"ID_2\"]",
       "rows": 2
     },
     {
@@ -53,6 +54,7 @@ export const moduleSpec = {
   ],
   renderResult,
   "localData": true,
+  "localCompanyIds": true,
   "productLink": false
 }
 
