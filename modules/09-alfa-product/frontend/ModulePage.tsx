@@ -37,7 +37,8 @@ export const moduleSpec = {
     }
   ],
   renderResult,
-  "localData": false,
+  "localData": true,
+  "preferredMode": "local_data",
   "productLink": true
 }
 

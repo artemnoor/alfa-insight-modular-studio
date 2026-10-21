@@ -63,6 +63,7 @@ export const moduleSpec = {
   ],
   renderResult,
   "liveFeed": true,
+  "preferredMode": "live_feed",
   "sourceCatalog": true,
   "localData": false,
   "productLink": false

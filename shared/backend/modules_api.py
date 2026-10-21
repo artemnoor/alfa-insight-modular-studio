@@ -10,11 +10,12 @@ import sys
 import threading
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "drive_data_analysis_2026-10-20"))
+sys.path.insert(0, str(ROOT / "shared" / "backend"))
 from local_data_paths import bank_knowledge_base, company_profiles_csv, news_archive_sqlite, payments_csv, person_links_csv
 
 MODULES = [
@@ -30,7 +31,12 @@ MODULES = [
 ]
 BY_SLUG = {item[0]: item for item in MODULES}
 LAST: dict[str, str] = {}
+OPTIONS_CACHE: dict[str, dict[str, Any]] = {}
 EXTERNAL_RUN_LOCK = threading.Lock()
+EXTERNAL_AI_MODULES = {
+    "news-intelligence", "business-intelligence", "personalization",
+    "impact-analysis", "bank-research", "ai-agent", "evidence-verification",
+}
 
 
 def _folder(slug: str) -> Path:
@@ -53,24 +59,32 @@ def _scenarios(slug: str) -> list[dict[str, Any]]:
 
 
 def _local_data_available(slug: str) -> bool:
+    if slug == "news-intelligence":
+        return news_archive_sqlite().is_file()
+    if slug == "evidence-verification":
+        return True
     if slug == "personalization":
         return company_profiles_csv().is_file() and news_archive_sqlite().is_file()
     if slug == "business-intelligence":
         return all(path.is_file() for path in (company_profiles_csv(), person_links_csv(), payments_csv()))
     if slug == "bank-research":
         return bank_knowledge_base().is_file()
+    if slug in {"impact-analysis", "ai-agent", "alfa-product"}:
+        return company_profiles_csv().is_file() and news_archive_sqlite().is_file()
     return False
 
 
 def _external_ai_available(slug: str) -> bool:
-    """Expose the paid agent mode only after explicit process opt-in and allowlist checks."""
-    if slug != "ai-agent" or os.environ.get("ALFA_ENABLE_EXTERNAL_AI") != "1":
-        return False
-    if not (os.environ.get("POLZA_AI_API_KEY") or os.environ.get("POLZA_API_KEY")):
+    """Expose only manually started AI modules after explicit opt-in and allowlist checks."""
+    if slug not in EXTERNAL_AI_MODULES or not (
+        os.environ.get("ALFA_ENABLE_EXTERNAL_AI") == "1"
+        or os.environ.get("ALFA_ALLOW_EXTERNAL_AI", "").strip().lower() in {"1", "true", "yes", "on"}
+    ):
         return False
     try:
         import agent_orchestrator
-        return agent_orchestrator.MODEL in agent_orchestrator.approved_models(agent_orchestrator.APPROVAL_FILE)
+        import polza_client
+        return agent_orchestrator.MODEL in agent_orchestrator.approved_models(agent_orchestrator.APPROVAL_FILE) and polza_client.provider_ready()
     except Exception:
         return False
 
@@ -109,7 +123,11 @@ def _check(data: dict[str, Any], expected: list[dict[str, Any]]) -> list[dict[st
 def _checks_status(checks: list[dict[str, Any]]) -> str:
     if not checks:
         return "NOT_EVALUATED"
-    return "PASS" if all(item["passed"] for item in checks) else "FAIL"
+    if any(item.get("passed") is False for item in checks):
+        return "FAIL"
+    if any(item.get("passed") is None for item in checks):
+        return "PARTIAL" if any(item.get("passed") is True for item in checks) else "NOT_EVALUATED"
+    return "PASS"
 
 
 def _test_suite_status(rows: list[dict[str, Any]]) -> str:
@@ -118,17 +136,27 @@ def _test_suite_status(rows: list[dict[str, Any]]) -> str:
         return "FAIL"
     if "NOT_EVALUATED" in statuses:
         return "PARTIAL" if "PASS" in statuses else "NOT_EVALUATED"
+    if "PARTIAL" in statuses:
+        return "PARTIAL"
     return "PASS" if rows else "NOT_EVALUATED"
 
 
 def _external_validation(data: dict[str, Any]) -> list[dict[str, Any]]:
-    usage = data.get("tokenUsage", {})
-    reported_cost = usage.get("cost_rub")
+    usage = data.get("tokenUsage") or data.get("providerUsage") or data.get("usage") or {}
+    reported_cost = usage.get("cost_rub", usage.get("costRub"))
+    budget = usage.get("budget_rub", usage.get("budgetRub", data.get("budgetRub")))
     cost_is_known = isinstance(reported_cost, (int, float)) and not isinstance(reported_cost, bool) and math.isfinite(reported_cost)
-    return [
-        {"name": "План зарегистрирован", "passed": bool(data.get("planHistory")), "expected": {"min": 1}, "actual": len(data.get("planHistory", []))},
-        {"name": "Расход известен и в заданном лимите", "passed": cost_is_known and reported_cost <= data.get("budgetRub", 0), "expected": {"max": data.get("budgetRub"), "reported": True}, "actual": reported_cost},
+    calls = usage.get("model_calls", usage.get("modelCalls", data.get("provenance", {}).get("externalCalls")))
+    checks = [
+        {"name": "Вызов разрешённой модели выполнен", "passed": True if bool(calls) or data.get("cacheHit") is True else None if data.get("aiInterpretation") is None else False,
+         "expected": {"min": 1}, "actual": calls or ("cache hit" if data.get("cacheHit") else 0)},
+        {"name": "Фактическая стоимость сообщена и в лимите", "passed": (reported_cost <= budget) if cost_is_known and isinstance(budget, (int, float)) else None,
+         "expected": {"max": budget, "reported": True}, "actual": reported_cost},
     ]
+    if "planHistory" in data:
+        checks.append({"name": "План исследования зарегистрирован", "passed": bool(data.get("planHistory")),
+            "expected": {"min": 1}, "actual": len(data.get("planHistory", []))})
+    return checks
 
 
 def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
@@ -146,18 +174,20 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
                          "localDataAvailable": local_available,
                          "liveFeedAvailable": slug == "news-collector",
                          "externalAiAvailable": external_available,
-                         "externalAiEnabled": False, "lastResult": LAST.get(slug)})
+                         "externalAiEnabled": external_available, "externalAiRequiresManualRun": True,
+                         "lastResult": LAST.get(slug)})
         return 200, {"contractVersion": "1.0", "modules": rows}
-    match = re.fullmatch(r"/api/modules/([a-z-]{3,40})/(health|scenarios|sources|run|tests)", path)
+    match = re.fullmatch(r"/api/modules/([a-z-]{3,40})/(health|scenarios|sources|options|run|tests)", path)
     if not match:
         return None
     slug, action = match.groups()
     if slug not in BY_SLUG:
         return 404, {"contractVersion": "1.0", "error": {"code": "MODULE_NOT_FOUND", "message": "Модуль не найден."}}
-    if action in {"health", "scenarios", "sources"} and method != "GET" or action in {"run", "tests"} and method != "POST":
+    if action in {"health", "scenarios", "sources", "options"} and method != "GET" or action in {"run", "tests"} and method != "POST":
         return 405, {"contractVersion": "1.0", "error": {"code": "METHOD_NOT_ALLOWED", "message": "Метод не поддерживается."}}
     if action == "health":
-        return 200, {"contractVersion": "1.0", "module": slug, "available": (_folder(slug) / "backend" / "adapter.py").is_file(), "mode": "Fixture", "localDataAvailable": _local_data_available(slug), "liveFeedAvailable": slug == "news-collector", "externalAiAvailable": _external_ai_available(slug), "externalAiEnabled": False}
+        external_available = _external_ai_available(slug)
+        return 200, {"contractVersion": "1.0", "module": slug, "available": (_folder(slug) / "backend" / "adapter.py").is_file(), "mode": "Fixture", "localDataAvailable": _local_data_available(slug), "liveFeedAvailable": slug == "news-collector", "externalAiAvailable": external_available, "externalAiEnabled": external_available, "externalAiRequiresManualRun": True}
     if action == "sources":
         if slug != "news-collector":
             return 404, {"contractVersion": "1.0", "error": {"code": "CATALOG_NOT_AVAILABLE", "message": "У этого модуля нет подключаемых источников."}}
@@ -165,6 +195,32 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
             return 200, {"contractVersion": "1.0", **_load(slug).catalog()}
         except Exception as exc:
             return 503, {"contractVersion": "1.0", "error": {"code": "SOURCE_CATALOG_UNAVAILABLE", "message": f"Не удалось получить список источников: {type(exc).__name__}."}}
+    if action == "options":
+        if slug not in {"impact-analysis", "ai-agent"}:
+            return 404, {"contractVersion": "1.0", "error": {"code": "OPTIONS_NOT_AVAILABLE", "message": "Для этого модуля нет списка локальных объектов."}}
+        if slug not in OPTIONS_CACHE:
+            try:
+                from stage1_analyzer import load_companies
+                import personalization
+                frame = load_companies()
+                event_options = [{"value": str(item.get("event_id")), "label": f"{str(item.get('title') or 'Событие')[:110]} · {str(item.get('published_at') or '')[:10]} · {str(item.get('event_id') or '')}"}
+                    | {"title": str(item.get("title") or ""), "eventId": str(item.get("event_id") or "")}
+                    for item in personalization.load_structured_events() if item.get("event_id")]
+                OPTIONS_CACHE[slug] = {"companyIds": sorted(set(frame["SYNTHETIC_U"].dropna().astype(str))), "events": event_options}
+            except Exception as exc:
+                return 503, {"contractVersion": "1.0", "error": {"code": "LOCAL_OPTIONS_UNAVAILABLE", "message": f"Не удалось прочитать локальные профили и архив: {type(exc).__name__}."}}
+        queries = parse_qs(urlparse(raw_path).query)
+        company_query = (queries.get("company_query", [""])[0] or "").strip().lower()
+        event_query = (queries.get("event_query", [""])[0] or "").strip().lower()
+        company_options = [{"value": value, "label": value} for value in OPTIONS_CACHE[slug]["companyIds"]
+            if len(company_query) >= 2 and company_query in value.lower()][:60]
+        events = OPTIONS_CACHE[slug]["events"]
+        if len(event_query) >= 2:
+            events = [item for item in events if event_query in item["title"].lower() or event_query in item["eventId"].lower()]
+        else:
+            events = events[:20]
+        event_options = [{"value": item["value"], "label": item["label"]} for item in events[:100]]
+        return 200, {"contractVersion": "1.0", "options": [{"name": "company_id", "options": company_options}, {"name": "event_id", "options": event_options}]}
     try:
         scenarios = _scenarios(slug)
     except Exception as exc:
@@ -175,8 +231,6 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
     mode = str(body.get("mode") or "fixture")
     if mode == "live_feed" and slug != "news-collector":
         return 403, {"contractVersion": "1.0", "error": {"code": "LIVE_SOURCE_NOT_SUPPORTED", "message": "Ручной сбор публичного RSS доступен только в модуле News Collector."}}
-    if mode == "external_ai" and slug != "ai-agent":
-        return 403, {"contractVersion": "1.0", "error": {"code": "EXTERNAL_AI_NOT_SUPPORTED", "message": "Внешний AI доступен только в AI Agent Studio."}}
     if mode == "external_ai" and not _external_ai_available(slug):
         return 409, {"contractVersion": "1.0", "error": {"code": "EXTERNAL_AI_UNAVAILABLE", "message": "Внешний AI закрыт. Проверьте явный ALFA_ENABLE_EXTERNAL_AI=1, API-ключ и разрешённую модель."}}
     if mode not in {"fixture", "local_data", "external_ai", "live_feed"}:
@@ -209,7 +263,7 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
         if isinstance(body.get("input"), dict):
             values.update(body["input"])
         if mode == "external_ai":
-            if not hasattr(adapter, "run_external"):
+            if slug not in EXTERNAL_AI_MODULES or not hasattr(adapter, "run_external"):
                 return 409, {"contractVersion": "1.0", "error": {"code": "EXTERNAL_AI_UNAVAILABLE", "message": "Для этого адаптера нет контролируемого внешнего AI запуска."}}
             data = adapter.run_external(values)
         elif mode == "live_feed":
@@ -232,13 +286,19 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
             checks = _check(data, (scenario or {}).get("expect", []))
         state = _checks_status(checks)
         LAST[slug] = state
-        run_status = {"PASS": "ok", "FAIL": "validation_failed", "NOT_EVALUATED": "not_evaluated"}[state]
+        run_status = {"PASS": "ok", "FAIL": "validation_failed", "NOT_EVALUATED": "not_evaluated", "PARTIAL": "partial"}[state]
         return 200, {"contractVersion": "1.0", "module": slug, "mode": mode, "status": run_status,
                      "data": data, "provenance": data.get("provenance", {}), "validation": {"status": state, "checks": checks}}
     except (ValueError, KeyError) as exc:
         return 400, {"contractVersion": "1.0", "error": {"code": "INVALID_INPUT", "message": str(exc)[:350]}}
     except Exception as exc:
-        return 503, {"contractVersion": "1.0", "module": slug, "error": {"code": "MODULE_RUN_FAILED", "message": f"Ошибка выполнения: {type(exc).__name__}.", "detail": str(exc)[:250]}}
+        error = {"code": getattr(exc, "public_code", "MODULE_RUN_FAILED"),
+                 "message": str(exc)[:350] if getattr(exc, "public_code", None) else f"Ошибка выполнения: {type(exc).__name__}.",
+                 "detail": str(exc)[:250]}
+        usage = getattr(exc, "provider_usage", None)
+        if usage:
+            error["usage"] = usage
+        return 503, {"contractVersion": "1.0", "module": slug, "error": error}
     finally:
         if external_lock_acquired:
             EXTERNAL_RUN_LOCK.release()

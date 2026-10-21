@@ -5,6 +5,8 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(ROOT/"drive_data_analysis_2026-10-20"))
 import personalization
+sys.path.insert(0,str(ROOT/"shared"/"backend"))
+from polza_client import chat_json
 PROFILE={"SYNTHETIC_U":"U_FIXTURE","MAINOKVED_CODE":"42.99","MAINOKVED_NAME":"Строительство прочих инженерных сооружений","REGION":"Москва","CL_PRODUCT_LOA_MARK":"1.0","CL_PRODUCT_DEP_MARK":"0.0","CL_PRODUCT_GAR_MARK":"0.0"}
 EVENTS=[
  {"event_id":"event-credit","title":"Условия кредитования строительных проектов изменятся","published_at":"2026-10-20T10:00:00+00:00","source":"Fixture","url":"https://fixture.invalid/credit","content_status":"full","content":"Условия кредитования инфраструктурных проектов.","classifications":{"topics":[],"events":[{"label":"кредитование","status":"confirmed_fact","semantic_status":"supported"}]},"confirmed_facts":[{"label":"Условия","quote":"Условия кредитования"}],"sources":[]},
@@ -59,4 +61,34 @@ def run_local(payload):
             ranked=personalization.rank_personalized_events(profile,events,network=networks[company_id],cache_path=Path(temp)/(company_id+".sqlite"))
             ranked_companies.append({"companyId":company_id,"rankedEvents":ranked[:limit],"networkStatus":graph_status})
     return {"companies":ranked_companies,"eventCount":len(events),"returnedLimit":limit,"provenance":{"kind":"local files (read only)","sources":["stage1_analyzer.load_companies","personalization.load_structured_events","personalization.rank_personalized_events","business_graph.get_company_network"],"networkStatus":graph_status,"externalCalls":0,"writes":"temporary ranking cache only; graph cache stays in this workspace"}}
+
+def run_external(payload):
+    result = run_local(payload)
+    from stage1_analyzer import load_companies
+    frame = load_companies()
+    company_context = []
+    for ranked in result["companies"]:
+        company_id = ranked["companyId"]
+        rows = frame.loc[frame["SYNTHETIC_U"] == company_id]
+        profile = rows.iloc[0].to_dict()
+        company_context.append({"companyId": company_id, "profile": {key: str(profile.get(key) or "") for key in (
+            "MAINOKVED_CODE", "MAINOKVED_NAME", "REGION", "REVENUE_COMPANY", "CL_PRODUCT_LOA_MARK", "CL_PRODUCT_DEP_MARK", "CL_PRODUCT_GAR_MARK",
+        )}, "topEvents": [{"eventId": item.get("event_id"), "title": item.get("title"), "score": item.get("score"),
+            "relevance": item.get("relevance_score"), "status": item.get("status"), "reasons": item.get("reasons", [])}
+            for item in ranked.get("rankedEvents", [])[:5]]})
+    response = chat_json(
+        "Объясни уже рассчитанное детерминированным алгоритмом ранжирование новостей. Не меняй баллы, порядок или статус; не называй балл вероятностью ущерба. Объяснения должны ссылаться только на переданные признаки. Верни JSON с массивом explanations: для каждой записи eventId, companyId, rationale, weakSignals (массив), whatToCheck (массив).",
+        {"rankingAlgorithm": "stage6-rules-v9", "companies": company_context},
+        max_cost_rub=payload.get("max_cost_rub", 1), max_tokens=1000,
+    )
+    answer = response["answer"]
+    allowed = {(company["companyId"], item["eventId"]) for company in company_context for item in company["topEvents"]}
+    explanations = answer.get("explanations") if isinstance(answer.get("explanations"), list) else []
+    result["aiExplanations"] = [item for item in explanations if isinstance(item, dict) and (item.get("companyId"), item.get("eventId")) in allowed]
+    result["aiModel"] = response["model"]
+    result["tokenUsage"] = response["usage"]
+    result["provenance"] = {**result["provenance"], "kind": "local ranking + Polza AI explanations",
+        "externalCalls": 1, "model": response["model"], "rankingChangedByAI": False,
+        "sentToProvider": ["selected company profile fields", "top event titles, scores and ranking factors"]}
+    return result
 

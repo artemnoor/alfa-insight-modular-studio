@@ -9,7 +9,8 @@ function renderResult(data: Record<string, any>) {
     <ResultSection title="Проверка каждого утверждения"><ResultList items={checks} empty="Утверждения не переданы." renderItem={check => <article className="module-result-card"><div className="module-result-card-top"><h4>{resultText(check.source_id, 'Источник не указан')}</h4><ResultTag tone={check.verified ? 'good' : 'warn'}>{check.verified ? 'Цитата найдена' : 'Не подтверждено'}</ResultTag></div><p><strong>Цитата:</strong> {resultText(check.quote, 'Не указана')}</p><p><strong>Связь с выводом:</strong> {resultText(check.relation_to_analysis, 'Не описана')}</p><p><strong>Причина:</strong> {resultText(check.reason || check.semantic_reason, 'Нет пояснения')}</p>{check.semantic_status && <ResultTag tone={check.semantic_status === 'supports' ? 'good' : 'warn'}>Смысловая оценка: {resultText(check.semantic_status)}</ResultTag>}</article>} /></ResultSection>
     <ResultSection title="Принятые доказательства"><ResultList items={verified} empty="Ни одна цитата не прошла текущую проверку." renderItem={item => <article className="module-result-card"><h4>{resultText(item.source_title || item.source_id)}</h4><p>«{resultText(item.quote)}»</p></article>} /></ResultSection>
     <ResultSection title="Предупреждения"><ResultTextList items={data.warnings} empty="Предупреждений нет." /></ResultSection>
-    <p className="module-result-inline-note">Сейчас этот адаптер проверяет точное присутствие цитаты и источник. Совпадение текста не подтверждает смысловую применимость; числовая и независимая семантическая проверки не запускались.</p>
+    {data.semanticReview && <ResultSection title="Смысловая проверка Polza AI"><ResultMetrics items={[{ label: 'Семантический статус', value: data.semanticReview.status }, { label: 'Проверено моделью', value: asRows(data.semanticReview.reviews).length }, { label: 'Независимая экспертиза', value: data.semanticReview.independent ? 'да' : 'нет' }]} /><ResultList items={data.semanticReview.reviews} empty="Смысловые оценки отсутствуют." renderItem={review => <article className="module-result-card"><div className="module-result-card-top"><h4>Утверждение {resultText(review.claim_id)}</h4><ResultTag>{resultText(review.status)}</ResultTag></div><p>{resultText(review.reason)}</p></article>} /><p className="module-result-inline-note">Точное совпадение проверено локально. Семантическая оценка выполнена той же моделью, что сформировала вывод, и не является независимой экспертизой.</p></ResultSection>}
+    {!data.semanticReview && <p className="module-result-inline-note">Fixture проверяет точное присутствие цитаты. Для ручной семантической проверки Polza AI передайте собственные claims и источники.</p>}
   </>
 }
 
@@ -24,15 +25,16 @@ export const moduleSpec = {
       "label": "Утверждения и цитаты (JSON)",
       "kind": "json",
       "rows": 6,
-      "placeholder": "Оставьте пустым для сценария фикстуры"
+      "placeholder": "[{\"claim_id\":\"c1\",\"source_id\":\"p1\",\"claim\":\"…\",\"quote\":\"…\"}]"
     },
     {
       "name": "sources",
       "label": "Источники (JSON)",
       "kind": "json",
       "rows": 6,
-      "placeholder": "Оставьте пустым для сценария фикстуры"
-    }
+      "placeholder": "[{\"chunk_id\":\"p1\",\"doc_title\":\"…\",\"page_number\":1,\"text\":\"…\"}]"
+    },
+    { "name": "max_cost_rub", "label": "Лимит стоимости AI (₽, максимум 5)", "kind": "number", "initial": "1", "min": 0.05, "max": 5, "externalOnly": true }
   ],
   "highlights": [
     {
@@ -53,7 +55,11 @@ export const moduleSpec = {
     }
   ],
   renderResult,
-  "localData": false,
+  "externalAi": true,
+  "externalAiScope": "переданные утверждения, цитаты и прикреплённые фрагменты источников",
+  "preferredMode": "external_ai",
+  "localData": true,
+  "localFields": ["claims", "sources"],
   "productLink": false
 }
 

@@ -10,24 +10,27 @@ function renderResult(data: Record<string, any>) {
   const evidence = asRows(data.t08Classification?.evidenceReview?.items)
   const eventMatch = data.t09EventMatching || {}
   const decision = eventMatch.decision || {}
-  const comparisons = asRows(eventMatch.comparisons)
+  const comparisons = asRows(eventMatch.comparisons || data.t09LocalMatches)
   const transport = data.fixtureTransport || {}
+  const liveUsage = data.providerUsage || {}
+  const live = data.provenance?.kind === 'Polza AI, manual run'
+  const local = data.provenance?.kind === 'local T09 embedding and archive search'
   const classificationReady = Boolean(t08.classifications)
 
   return <>
     <div className="module-result-inline-note" role="status">
-      Офлайн-проверка: выполнены исходные алгоритмы T08/T09, но ответы моделей синтетические. Внешние сетевые вызовы заблокированы; эти результаты нельзя использовать для оценки качества классификации.
+      {live ? `Реальный ручной запуск через Polza AI (${liveUsage.model || 'модель не указана'}). Вызовов: ${liveUsage.modelCalls || 0}; стоимость: ${liveUsage.costReported ? `${liveUsage.costRub} ₽` : 'провайдер не сообщил'} при лимите ${liveUsage.budgetRub} ₽.` : local ? 'Локальный режим: T09 выполнил векторный поиск в архиве без AI. Классификация T08 в этом режиме не запускалась.' : 'Fixture-запуск: выполнены алгоритмы T08/T09, ответы модели синтетические, сетевые вызовы заблокированы. Эти результаты проверяют поток, но не качество модели.'}
     </div>
     <ResultMetrics items={[
-      { label: 'T08', value: classificationReady ? 'Классификация выполнена' : 'Нужен текст от 20 символов' },
+      { label: 'T08', value: classificationReady ? 'Классификация выполнена' : data.t08Status === 'requires_external_ai' ? 'Нужен ручной AI-запуск' : 'Нужен текст от 20 символов' },
       { label: 'Главная тема', value: t08.topic?.label },
       { label: 'Событие SENTiVENT', value: classifications.event?.value?.label },
       { label: 'Жанр публикации', value: classifications.genre?.value?.label },
       { label: 'Извлечённые сущности', value: entities.length },
       { label: 'T09: отношение', value: decision.relation || '—' },
       { label: 'Решение T09', value: decision.resolution || '—' },
-      { label: 'Ответы модели в фикстуре', value: transport.syntheticModelResponses ?? 0 },
-      { label: 'Внешние запросы', value: transport.externalNetworkCalls ?? 0 },
+      { label: live ? 'Вызовы Polza AI' : local ? 'Внешние AI-вызовы' : 'Ответы модели в фикстуре', value: live ? liveUsage.modelCalls ?? 0 : local ? 0 : transport.syntheticModelResponses ?? 0 },
+      { label: live ? 'Стоимость' : 'Внешние запросы', value: live ? `${liveUsage.costRub ?? 'неизвестна'} ₽` : transport.externalNetworkCalls ?? 0 },
     ]} />
 
     {classificationReady && <>
@@ -72,9 +75,9 @@ function renderResult(data: Record<string, any>) {
     {data.t09Embedding && <ResultSection title="T09 · локальный поиск похожих текстов">
       <p>Локальная модель: {resultText(data.t09Embedding.model)} · размерность {resultText(data.t09Embedding.dimensions)} · ненулевых признаков {resultText(data.t09Embedding.nonZeroDimensions)}.</p>
       <ResultList items={comparisons} empty="Кандидаты архива не переданы. T09 вернул DIFFERENT по правилу пустого списка." renderItem={item => <article className="module-result-card">
-        <div className="module-result-card-top"><h4>{resultText(item.title)}</h4><ResultTag>{resultText(item.relation)}</ResultTag></div>
+        <div className="module-result-card-top"><h4>{resultText(item.title)}</h4><ResultTag>{resultText(item.relation, 'локальное сходство')}</ResultTag></div>
         <p>Локальное сходство: {Number(item.similarity || 0).toFixed(3)} · уверенность сравнения: {resultText(item.confidence)}</p>
-        <p>Архивная запись: {resultText(item.candidateId)} · дата: {resultText(item.publicationDate)}</p>
+        <p>Архивная запись: {resultText(item.candidateId || item.newsId)} · дата: {resultText(item.publicationDate)}</p>
       </article>} />
       {decision.reason && <p>Вывод: {decision.reason}</p>}
       {asRows(decision.fallback?.reasons).length > 0 && <p>Почему оставлено на ручную проверку: {decision.fallback.reasons.join('; ')}.</p>}
@@ -87,17 +90,24 @@ export const moduleSpec: ModuleSpec = {
   id: 'news-intelligence',
   title: 'News Intelligence · T08/T09',
   summary: 'Разберите классификацию новости, извлечённые факты и проверку связи с архивными событиями.',
-  purpose: 'Введите публикацию и, при необходимости, JSON-массив кандидатов T09: [{"title":"…","content":"…","publicationDate":"2026-10-21","contentStatus":"excerpt"}]. В режиме Fixture ответы модели синтетические, без сетевых запросов.',
+  purpose: 'Вставьте реальную публикацию. В External AI исходные T08/T09 используют разрешённые модели; при наличии кандидатов они сопоставляются с локальным архивом.',
   fields: [
     { name: 'text', label: 'Текст публикации', kind: 'text', rows: 8, minLength: 20, placeholder: 'Вставьте текст новости (не менее 20 символов)…' },
+    { name: 'title', label: 'Заголовок публикации (необязательно)', externalOnly: true },
+    { name: 'date', label: 'Дата публикации (необязательно)', externalOnly: true },
     { name: 'content_status', label: 'Полнота текста', kind: 'select', initial: 'excerpt', options: [
       { value: 'full', label: 'Полный текст' }, { value: 'excerpt', label: 'RSS-выдержка' }, { value: 'missing', label: 'Текст источника отсутствует' },
     ] },
     { name: 't09_candidates', label: 'Кандидаты событий T09 (JSON)', kind: 'json', rows: 7, placeholder: '[]' },
+    { name: 'max_cost_rub', label: 'Лимит стоимости (₽, максимум 5)', kind: 'number', initial: '1', min: 0.05, max: 5, externalOnly: true },
   ],
   highlights: [],
   renderResult,
-  localData: false,
+  externalAi: true,
+  externalAiScope: 'текст и заголовок публикации, а также до десяти выбранных кандидатов T09 из локального архива',
+  preferredMode: 'external_ai',
+  localData: true,
+  localFields: ['text', 'content_status', 't09_candidates'],
   productLink: false,
 }
 

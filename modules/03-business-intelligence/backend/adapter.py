@@ -4,6 +4,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "drive_data_analysis_2026-10-20"))
 import business_graph as graph
+sys.path.insert(0, str(ROOT / "shared" / "backend"))
+from polza_client import chat_json
 
 def run(payload):
     company_id = "U_UNKNOWN" if payload.get("unknown_company") else str(payload.get("company_id") or "U_FIXTURE")
@@ -37,4 +39,28 @@ def run_local(payload):
     except KeyError as exc:
         raise ValueError("Компания не найдена или её профиль неоднозначен в локальных источниках.") from exc
     return {"companyId":company_id,"profileStatus":result.get("profile_status"),"profile":result.get("profile"),"metrics":result.get("metrics"),"directConnections":result.get("direct_connections"),"graph":result.get("graph"),"importStats":{k:imported.get(k) for k in ("profile_rows","person_link_rows","payment_rows","company_nodes")},"interpretationLimitations":result.get("limitations",[]),"provenance":{"kind":"local source CSVs (read only)","sources":["business_graph.ensure_database","business_graph.get_company_network"],"writes":"derived SQLite cache in this workspace only"}}
+
+def run_external(payload):
+    result = run_local(payload)
+    profile = result.get("profile") or {}
+    metrics = result.get("metrics") or {}
+    network = result.get("directConnections") or {}
+    safe_profile = {key: profile.get(key) for key in (
+        "SYNTHETIC_U", "MAINOKVED_CODE", "MAINOKVED_NAME", "REGION", "REVENUE_COMPANY",
+        "CL_PRODUCT_LOA_MARK", "CL_PRODUCT_DEP_MARK", "CL_PRODUCT_GAR_MARK",
+    ) if profile.get(key) not in (None, "")}
+    summary = {"companyId": result["companyId"], "profile": safe_profile,
+        "paymentMetrics": metrics,
+        "observedConnectionCounts": {key: len(value) if isinstance(value, list) else 0 for key, value in network.items()},
+        "limitations": result.get("interpretationLimitations", [])}
+    response = chat_json(
+        "Ты помощник аналитика компаний. Объясняй только наблюдаемые поля и агрегаты. Не утверждай, что платёж означает поставку, а общий GROUP_ID — контроль. Отделяй факт от гипотезы; если поля не подтверждают связь, верни unclear. Ответь по-русски JSON: summary (string), observations (array of strings), hypotheses (array of strings), missing_data (array of strings).",
+        summary, max_cost_rub=payload.get("max_cost_rub", 1), max_tokens=800,
+    )
+    result["aiInterpretation"] = response["answer"]
+    result["model"] = response["model"]
+    result["tokenUsage"] = response["usage"]
+    result["provenance"] = {**result["provenance"], "kind": "local company data + Polza AI interpretation",
+        "externalCalls": 1, "model": response["model"], "sentToProvider": ["limited profile fields", "payment aggregates", "connection counts"]}
+    return result
 

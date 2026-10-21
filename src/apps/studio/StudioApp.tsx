@@ -51,6 +51,6 @@ export default function StudioApp() {
         <a className="studio-open" href={`/studio/${item.id}`}>Открыть модуль <span>→</span></a>
       </article>)}
     </section>
-    <footer className="studio-footer"><span>Fixture-сценарии используют синтетические данные.</span><span>Внешний AI по умолчанию выключен; ручной opt-in доступен только агенту.</span></footer>
+    <footer className="studio-footer"><span>Fixture оставлен для бесплатных тестовых сценариев; рабочие режимы используют локальные данные или Live RSS.</span><span>Polza AI доступен в отдельных модулях только после ручного запуска. Перед отправкой интерфейс показывает, какие данные уйдут модели.</span></footer>
   </main>
 }

@@ -17,4 +17,4 @@ Fixture mode runs the T08/T09 algorithms with deterministic synthetic model resp
 
 T09 uses the real local vectorizer to order these candidates. The prepared relation response is `UNSURE`, so it remains in manual review. An empty candidate list deterministically returns `DIFFERENT` / `CREATE_NEW_EVENT`.
 
-Live approved-model calls and automatic read-only archive selection are not connected to this module yet. The client product's existing T08/T09 ingestion pipeline remains available independently.
+`Local Data` runs T09 against the processed local archive without an AI call. `External AI` manually runs the existing T08/T09 implementation with the approved Polza model; the submitted publication and selected archive candidates are sent to the provider. The mode requires server opt-in, an API key, and an approved model. Merely opening the page does not make a request. Fixture mode stays synthetic and blocks outbound requests.

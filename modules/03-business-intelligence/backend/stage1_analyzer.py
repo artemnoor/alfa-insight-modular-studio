@@ -120,6 +120,9 @@ def analyze_one(
     news_text: str,
     news_date: str = "",
     source_url: str = "",
+    *,
+    max_tokens: int = 2000,
+    timeout: int = 120,
 ) -> dict[str, Any]:
     response = requests.post(
         API_URL,
@@ -130,9 +133,9 @@ def analyze_one(
             "response_format": {"type": "json_object"},
             "reasoning": {"effort": "none"},
             "temperature": 0.1,
-            "max_tokens": 2000,
+            "max_tokens": max(128, min(int(max_tokens), 2000)),
         },
-        timeout=120,
+        timeout=max(10, min(int(timeout), 120)),
     )
     response.raise_for_status()
     envelope = response.json()
