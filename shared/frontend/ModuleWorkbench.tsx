@@ -148,10 +148,16 @@ export function ModuleWorkbench({ spec }: Props) {
       const body = await response.json()
       if (!response.ok) {
         const usage = body.error?.usage
+        const safeNewsDetail = spec.id === 'news-intelligence'
+          && typeof body.error?.detail === 'string'
+          && body.error.detail.startsWith('Polza/T08 не завершил классификацию.')
+          ? body.error.detail
+          : ''
+        const publicMessage = safeNewsDetail || body.error?.message || `Ошибка API: ${response.status}`
         const billing = usage
           ? ` Внешних вызовов: ${usage.modelCalls ?? 0}; стоимость: ${usage.costReported ? `${usage.costRub} ₽` : 'не сообщена — проверьте кабинет провайдера перед повтором'}${usage.budgetRub ? ` при лимите ${usage.budgetRub} ₽` : ''}.`
           : ''
-        throw new Error((body.error?.message || `Ошибка API: ${response.status}`) + billing)
+        throw new Error(publicMessage + billing)
       }
       setResult(body as ModuleRunResponse)
       if (mode === 'fixture' || mode === 'live_feed' || spec.id === 'ai-agent') setHistory(previous => [{ at: new Date().toLocaleTimeString('ru-RU'), status: body.validation?.status || body.status, body }, ...previous].slice(0, 3))
@@ -224,3 +230,4 @@ export function ModuleWorkbench({ spec }: Props) {
     </div>
   </main>
 }
+
