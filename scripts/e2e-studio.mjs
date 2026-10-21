@@ -97,10 +97,10 @@ try {
     if (runRealLocalData && ['business-intelligence', 'personalization', 'bank-research'].includes(slug)) {
       await page.locator('.module-mode select').selectOption('local_data')
       if (slug === 'business-intelligence') {
-        await page.getByPlaceholder('ID компании, например U_12345').fill(localCompanyA)
+        await page.getByPlaceholder('Введите ID компании').fill(localCompanyA)
       } else if (slug === 'personalization') {
         await page.locator('.module-control textarea').fill(JSON.stringify(localCompanyIds))
-        await page.getByLabel('Лимит событий в Local Data').fill('50')
+        await page.getByLabel('Лимит событий').fill('50')
       } else {
         await page.getByPlaceholder('Что искать?').fill('кредитование проектов по защите критической инфраструктуры')
       }

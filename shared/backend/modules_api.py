@@ -292,9 +292,11 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
     except (ValueError, KeyError) as exc:
         return 400, {"contractVersion": "1.0", "error": {"code": "INVALID_INPUT", "message": str(exc)[:350]}}
     except Exception as exc:
-        error = {"code": getattr(exc, "public_code", "MODULE_RUN_FAILED"),
-                 "message": str(exc)[:350] if getattr(exc, "public_code", None) else f"Ошибка выполнения: {type(exc).__name__}.",
-                 "detail": str(exc)[:250]}
+        public_code = getattr(exc, "public_code", None)
+        public_message = str(exc)[:350] if public_code else f"Ошибка выполнения: {type(exc).__name__}."
+        error = {"code": public_code or "MODULE_RUN_FAILED",
+                 "message": public_message,
+                 "detail": public_message if public_code else str(exc)[:250]}
         usage = getattr(exc, "provider_usage", None)
         if usage:
             error["usage"] = usage
@@ -302,3 +304,4 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
     finally:
         if external_lock_acquired:
             EXTERNAL_RUN_LOCK.release()
+

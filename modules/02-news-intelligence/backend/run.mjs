@@ -5,6 +5,7 @@ const input = JSON.parse(await new Promise((resolve, reject) => {
   process.stdin.on('end', () => resolve(value || '{}'))
   process.stdin.on('error', reject)
 }))
+const { capProviderRequest, MAX_PROVIDER_CALLS, providerStopReason } = await import('./provider_limits.mjs')
 
 // Fixture mode exercises the production T08/T09 control flow while preventing every
 // outbound request. External mode calls the approved provider only after a manual run.
@@ -16,6 +17,14 @@ let blockedExternalLookups = 0
 let serialFetchQueue = Promise.resolve()
 const providerUsage = { model: null, modelCalls: 0, inputTokens: 0, outputTokens: 0, costRub: 0, costReported: true, budgetRub: Number(input.max_cost_rub || 1), budgetExceeded: false }
 
+function providerGuardError() {
+  const stop = providerStopReason(providerUsage) || { code: 'POLZA_REQUEST_STOPPED', message: 'Внешние запросы остановлены защитным ограничителем.' }
+  const error = new Error(stop.message)
+  error.code = stop.code
+  error.providerUsage = { ...providerUsage }
+  return error
+}
+
 function providerFailure(error) {
   const raw = String(error?.message || error || 'неизвестная ошибка провайдера').replace(/\s+/gu, ' ').trim()
   const publicMessage = raw.split('; response=')[0]
@@ -23,13 +32,13 @@ function providerFailure(error) {
     .replace(/pza_[A-Za-z0-9._-]+/gu, '[ключ скрыт]')
     .slice(0, 300)
   const status = Number(raw.match(/\bHTTP\s+(\d{3})\b/iu)?.[1])
-  const code = status === 401 ? 'POLZA_AUTH_FAILED'
+  const code = error?.code || (status === 401 ? 'POLZA_AUTH_FAILED'
     : status === 402 ? 'POLZA_BALANCE_OR_LIMIT'
       : status === 404 ? 'POLZA_MODEL_UNAVAILABLE'
         : status === 429 ? 'POLZA_RATE_LIMITED'
           : status >= 500 ? 'POLZA_PROVIDER_UNAVAILABLE'
             : /timeout|timed out|aborted/iu.test(raw) ? 'POLZA_REQUEST_TIMEOUT'
-              : 'T08_CLASSIFICATION_FAILED'
+              : 'T08_CLASSIFICATION_FAILED')
   return { code, message: `T08 не завершил классификацию: ${publicMessage}. T09 не запускался.` }
 }
 
@@ -114,21 +123,32 @@ if (!externalMode) {
   const nativeFetch = globalThis.fetch.bind(globalThis)
   globalThis.fetch = (url, options = {}) => {
     const requestTask = serialFetchQueue.then(async () => {
-      if (providerUsage.modelCalls >= 8 || providerUsage.budgetExceeded || !providerUsage.costReported) throw new Error('Вызов остановлен лимитом: достигнут предел запросов, бюджета или неизвестна стоимость предыдущего ответа.')
+      if (providerUsage.modelCalls >= MAX_PROVIDER_CALLS || providerUsage.budgetExceeded || !providerUsage.costReported || providerUsage.providerError) throw providerGuardError()
       const target = new URL(String(url))
       if (target.hostname !== 'polza.ai') throw new Error('T08/T09 попытался обратиться к неразрешённому хосту.')
       let request = {}
       try { request = JSON.parse(options.body || '{}') } catch {}
       if (!HACK_APPROVED_MODEL_IDS.includes(request.model)) throw new Error('Запрошенная модель отсутствует в allowlist Alfa Insight.')
-      request.max_tokens = Math.min(Number(request.max_tokens) || 800, 1000)
+      request = capProviderRequest(request)
       providerUsage.modelCalls += 1
       providerUsage.model = request.model
       providerUsage.costReported = false
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 25000)
       let responseValue
-      try { responseValue = await nativeFetch(target, { ...options, body: JSON.stringify(request), signal: controller.signal }) }
-      finally { clearTimeout(timer) }
+      try {
+        responseValue = await nativeFetch(target, { ...options, body: JSON.stringify(request), signal: controller.signal })
+      } catch (cause) {
+        const timedOut = cause?.name === 'AbortError' || cause?.name === 'TimeoutError'
+        const code = timedOut ? 'POLZA_REQUEST_TIMEOUT' : 'POLZA_TRANSPORT_ERROR'
+        const message = timedOut ? 'Истёк таймаут запроса к Polza.' : 'Не удалось получить ответ от Polza по сети.'
+        providerUsage.costReported = false
+        providerUsage.providerError = { code, message }
+        const error = new Error(message)
+        error.code = code
+        error.providerUsage = { ...providerUsage }
+        throw error
+      } finally { clearTimeout(timer) }
       try {
         const envelope = await responseValue.clone().json()
         const usage = envelope?.usage || {}
@@ -142,6 +162,25 @@ if (!externalMode) {
           if (providerUsage.costRub > providerUsage.budgetRub) providerUsage.budgetExceeded = true
         } else providerUsage.costReported = false
       } catch { providerUsage.costReported = false }
+      if (!responseValue.ok) {
+        const status = responseValue.status
+        const code = status === 401 ? 'POLZA_AUTH_FAILED'
+          : status === 402 ? 'POLZA_BALANCE_OR_LIMIT'
+            : status === 404 ? 'POLZA_MODEL_UNAVAILABLE'
+              : status === 429 ? 'POLZA_RATE_LIMITED'
+                : status >= 500 ? 'POLZA_PROVIDER_UNAVAILABLE' : 'POLZA_REQUEST_FAILED'
+        let message = `Polza вернул HTTP ${status}.`
+        try {
+          const envelope = await responseValue.clone().json()
+          const detail = String(envelope?.error?.message || envelope?.error || '').replace(/\s+/gu, ' ').trim()
+          if (detail) message += ` ${detail.slice(0, 220)}`
+        } catch {}
+        providerUsage.providerError = { code, message }
+        const error = new Error(message)
+        error.code = code
+        error.providerUsage = { ...providerUsage }
+        throw error
+      }
       return responseValue
     })
     serialFetchQueue = requestTask.then(() => undefined, () => undefined)
@@ -224,3 +263,4 @@ if (externalMode) {
     note: 'Полные алгоритмы T08/T09 выполнены; ответы модели синтетические и применимы только для проверки потока.' }
 }
 process.stdout.write(JSON.stringify(result))
+

@@ -1,5 +1,7 @@
-import sys, unittest
+import json, subprocess, sys, unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from shared.backend.modules_api import _load, dispatch
@@ -31,6 +33,29 @@ class IsolatedFixtureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "не короче 20 символов"):
             _load("news-intelligence").run({"text": "Слишком коротко"})
 
+    def test_external_runner_failure_keeps_provider_reason_and_usage_without_leaking_key(self):
+        adapter = _load("news-intelligence")
+        payload = {
+            "text": "Публичная новость о проектах критической инфраструктуры и новых условиях кредитования.",
+            "t09_candidates": [{"newsId": "fixture-1", "title": "Кандидат", "content": "Текст кандидата"}],
+            "max_cost_rub": 0.25,
+        }
+        stdout = json.dumps({
+            "error": {
+                "code": "POLZA_COST_UNKNOWN",
+                "message": "T08 не завершил классификацию: Polza не сообщил стоимость предыдущего ответа; Bearer pza_secret-value. T09 не запускался.",
+            },
+            "providerUsage": {"modelCalls": 1, "costRub": 0, "costReported": False, "budgetRub": 0.25},
+        })
+        failed = SimpleNamespace(returncode=1, stdout=stdout, stderr="runner failed")
+        with patch.object(adapter.subprocess, "run", return_value=failed):
+            with self.assertRaises(adapter.ExternalAIRunError) as caught:
+                adapter.run_external(payload)
+        self.assertEqual(caught.exception.public_code, "POLZA_COST_UNKNOWN")
+        self.assertEqual(caught.exception.provider_usage["modelCalls"], 1)
+        self.assertIn("T09 не запускался", str(caught.exception))
+        self.assertNotIn("pza_secret-value", str(caught.exception))
+
     def test_prepared_scenarios(self):
         status, result = dispatch("POST", "/api/modules/news-intelligence/tests", {})
         self.assertEqual(status, 200)
@@ -39,3 +64,4 @@ class IsolatedFixtureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -52,8 +52,10 @@ class IsolatedFixtureTests(unittest.TestCase):
                 for name, value in zip(names, previous):
                     setattr(graph, name, value)
         self.assertEqual("available", result["profileStatus"])
+        self.assertEqual("Инженерное строительство", result["profile"]["MAINOKVED_NAME"])
         self.assertEqual(2, result["importStats"]["company_nodes"])
         self.assertEqual("local source CSVs (read only)", result["provenance"]["kind"])
 
 if __name__ == "__main__":
     unittest.main()
+

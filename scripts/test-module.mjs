@@ -16,5 +16,10 @@ if (!folders[slug]) {
 const python = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
 const result = spawnSync(python, ['-m','unittest','discover','-s',`modules/${folders[slug]}/tests`], { cwd: root, stdio: 'inherit', env: process.env })
 if (result.status !== 0) process.exit(result.status ?? 1)
+if (slug === 'news-intelligence') {
+  const providerTests = spawnSync(process.execPath, ['--test', 'modules/02-news-intelligence/tests/provider-limits.test.mjs'], { cwd: root, stdio: 'inherit', env: process.env })
+  if (providerTests.status !== 0) process.exit(providerTests.status ?? 1)
+}
 const fixtures = spawnSync(python, ['scripts/test-module-fixtures.py', slug], { cwd: root, stdio: 'inherit', env: process.env })
 process.exit(fixtures.status ?? 1)
+

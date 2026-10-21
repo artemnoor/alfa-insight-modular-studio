@@ -1,7 +1,49 @@
 from __future__ import annotations
-import json, subprocess
+import json, re, subprocess
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class ExternalAIRunError(RuntimeError):
+    """Safe, structured provider failure that can be shown to a user."""
+
+    def __init__(self, message, code="T08_EXTERNAL_RUN_FAILED", usage=None):
+        super().__init__(message)
+        self.public_code = code
+        self.provider_usage = usage
+
+
+def _safe_provider_message(value):
+    raw = str(value or "Неизвестный сбой внешнего запуска.").replace("\r", " ").replace("\n", " ")
+    raw = raw.split("; response=")[0]
+    raw = re.sub(r"Bearer\s+\S+", "Bearer [ключ скрыт]", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"pza_[A-Za-z0-9._-]+", "[ключ скрыт]", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw[:350]
+
+
+def _runner_error(result):
+    try:
+        data = json.loads(result.stdout or "")
+    except (TypeError, json.JSONDecodeError):
+        data = None
+    if isinstance(data, dict) and isinstance(data.get("error"), dict):
+        detail = data["error"]
+        message = _safe_provider_message(detail.get("message"))
+        return ExternalAIRunError(message, str(detail.get("code") or "T08_EXTERNAL_RUN_FAILED"), data.get("providerUsage"))
+
+    message = _safe_provider_message(result.stderr or "T08/T09 завершился без структурированного результата.")
+    status = int(re.search(r"\bHTTP\s+(\d{3})\b", message, flags=re.IGNORECASE).group(1)) if re.search(r"\bHTTP\s+(\d{3})\b", message, flags=re.IGNORECASE) else None
+    code = {
+        401: "POLZA_AUTH_FAILED",
+        402: "POLZA_BALANCE_OR_LIMIT",
+        404: "POLZA_MODEL_UNAVAILABLE",
+        429: "POLZA_RATE_LIMITED",
+    }.get(status, "T08_EXTERNAL_RUN_FAILED")
+    usage_match = re.search(r"\bPOLZA_(?:COST_UNKNOWN|COST_LIMIT_REACHED|REQUEST_LIMIT_REACHED|BALANCE_OR_LIMIT|AUTH_FAILED|RATE_LIMITED|MODEL_UNAVAILABLE)\b", message)
+    if usage_match:
+        code = usage_match.group(0)
+    return ExternalAIRunError(message, code)
 
 def run(payload):
     article = str(payload.get("text") or "")
@@ -56,16 +98,32 @@ def run_external(payload):
         "t09Candidates": candidates[:10], "max_cost_rub": budget,
     }
     runner = ROOT / "modules" / "02-news-intelligence" / "backend" / "run.mjs"
-    result = subprocess.run(["node", str(runner)], input=json.dumps(value, ensure_ascii=False), capture_output=True,
-        text=True, encoding="utf-8", cwd=ROOT, timeout=100)
+    try:
+        result = subprocess.run(["node", str(runner)], input=json.dumps(value, ensure_ascii=False), capture_output=True,
+            text=True, encoding="utf-8", cwd=ROOT, timeout=100)
+    except subprocess.TimeoutExpired:
+        raise ExternalAIRunError(
+            "T08/T09 не ответил за 100 секунд. Стоимость завершённых запросов неизвестна; проверьте кабинет Polza перед повтором.",
+            "POLZA_RUN_TIMEOUT",
+            {"costReported": False, "budgetRub": budget},
+        )
     if result.returncode:
-        raise RuntimeError(result.stderr.strip()[-500:] or "T08/T09 не завершил внешний запуск.")
-    data = json.loads(result.stdout)
+        raise _runner_error(result)
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ExternalAIRunError(
+            "T08/T09 завершился без корректного JSON-результата. Возможную стоимость проверьте в кабинете Polza перед повтором.",
+            "T08_RUNNER_INVALID_RESPONSE",
+            {"costReported": False, "budgetRub": budget},
+        ) from exc
     if data.get("error"):
-        error = RuntimeError(str(data["error"].get("message") or "T08/T09 не завершил внешний запуск."))
-        error.provider_usage = data.get("providerUsage")
-        error.public_code = data["error"].get("code")
-        raise error
+        detail = data["error"] if isinstance(data["error"], dict) else {}
+        raise ExternalAIRunError(
+            _safe_provider_message(detail.get("message") or "T08/T09 не завершил внешний запуск."),
+            str(detail.get("code") or "T08_EXTERNAL_RUN_FAILED"),
+            data.get("providerUsage"),
+        )
     data["provenance"] = {**(data.get("provenance") or {}), "input": "user-supplied publication", "externalCalls": data.get("providerUsage", {}).get("modelCalls", 0)}
     return data
 
@@ -86,4 +144,5 @@ def run_local(payload):
         "t09LocalMatches":match_data.get("matches",[]),"inputCharacters":len(article),
         "limitations":["T08-классификация требует ручного запуска разрешённой модели. Локальный режим выполняет только T09-векторный поиск."],
         "provenance":{"kind":"local T09 embedding and archive search","sources":["T09 local-hash-tfidf-v1","local news archive"],"externalCalls":0,"writes":"none"}}
+
 

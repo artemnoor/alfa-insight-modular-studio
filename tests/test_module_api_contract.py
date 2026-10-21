@@ -109,6 +109,24 @@ class ModuleApiContractTests(unittest.TestCase):
         self.assertEqual(["started"], calls)
         self.assertEqual(1, len(result))
 
+    def test_external_module_error_preserves_safe_provider_diagnostic(self):
+        class Adapter:
+            def run_external(self, _payload):
+                error = RuntimeError("T08 не завершил классификацию: Polza не сообщил стоимость после 1 вызова. T09 не запускался.")
+                error.public_code = "POLZA_COST_UNKNOWN"
+                error.provider_usage = {"modelCalls": 1, "costRub": 0, "costReported": False, "budgetRub": 0.25}
+                raise error
+
+        with patch("shared.backend.modules_api._external_ai_available", return_value=True), \
+             patch("shared.backend.modules_api._load", return_value=Adapter()):
+            status, result = dispatch("POST", "/api/modules/news-intelligence/run", {
+                "mode": "external_ai", "input": {"text": "Безопасный синтетический текст тестовой новости."}
+            })
+        self.assertEqual(status, 503)
+        self.assertEqual(result["error"]["code"], "POLZA_COST_UNKNOWN")
+        self.assertIn("стоимость после 1 вызова", result["error"]["message"])
+        self.assertEqual(result["error"]["usage"]["modelCalls"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

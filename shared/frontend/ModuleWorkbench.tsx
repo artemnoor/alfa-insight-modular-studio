@@ -150,7 +150,7 @@ export function ModuleWorkbench({ spec }: Props) {
         const usage = body.error?.usage
         const safeNewsDetail = spec.id === 'news-intelligence'
           && typeof body.error?.detail === 'string'
-          && body.error.detail.startsWith('Polza/T08 не завершил классификацию.')
+          && /^(?:Polza\/)?T08 не завершил классификацию[.:]/u.test(body.error.detail)
           ? body.error.detail
           : ''
         const publicMessage = safeNewsDetail || body.error?.message || `Ошибка API: ${response.status}`
@@ -230,4 +230,5 @@ export function ModuleWorkbench({ spec }: Props) {
     </div>
   </main>
 }
+
 

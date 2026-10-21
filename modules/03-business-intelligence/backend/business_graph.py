@@ -706,7 +706,7 @@ def get_company_network(company_id: str, *, graph_depth: int = 2) -> dict[str, A
     """Return profile status, exact payment metrics, direct relations, and a bounded graph."""
     with closing(_connect()) as conn:
         company = conn.execute(
-            "SELECT profile_status, group_id, profile_row_count FROM companies WHERE company_id = ?",
+            "SELECT profile_status, group_id, profile_row_count, profile_json FROM companies WHERE company_id = ?",
             (company_id,),
         ).fetchone()
         if not company:
@@ -776,6 +776,7 @@ def get_company_network(company_id: str, *, graph_depth: int = 2) -> dict[str, A
         "company_id": company_id,
         "profile_status": company["profile_status"],
         "profile_row_count": int(company["profile_row_count"]),
+        "profile": json.loads(company["profile_json"] or "{}"),
         "group_id": company["group_id"],
         "metrics": metrics,
         "top_incoming": top_incoming,
@@ -873,3 +874,4 @@ def format_direct_connection_rows(network: dict[str, Any]) -> list[dict[str, Any
 
 if __name__ == "__main__":
     print(json.dumps(ensure_database(), ensure_ascii=False, indent=2))
+
