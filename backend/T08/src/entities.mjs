@@ -1270,7 +1270,8 @@ r rows: [subject_id,predicate,object_id,event_id]. Use only explicit links and t
       } }) },
     ],
     response_format: { type: 'json_object' },
-    reasoning: { effort: 'none' },
+    include_reasoning: false,
+    reasoning_effort: 'none',
     temperature: 0,
     max_tokens: Number.isInteger(sourceMetadata.diagnosticMaxTokens) ? Math.max(1000, Math.min(sourceMetadata.diagnosticMaxTokens, 8000)) : 3000,
   }
