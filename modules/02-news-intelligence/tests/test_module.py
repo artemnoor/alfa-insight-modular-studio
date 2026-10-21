@@ -29,6 +29,22 @@ class IsolatedFixtureTests(unittest.TestCase):
         self.assertEqual(result["t09EventMatching"]["decision"]["relation"], "DIFFERENT")
         self.assertEqual(result["t09EventMatching"]["decision"]["resolution"], "CREATE_NEW_EVENT")
 
+    def test_local_t09_omits_zero_similarity_candidates_but_keeps_real_overlap(self):
+        adapter = _load("news-intelligence")
+        gibberish = "фываолдж кцйуктен билеберда абракадабра зюыфвцйч 987654321"
+        unrelated = adapter.run_local({"text": gibberish, "t09_candidates": [{
+            "newsId": "unrelated", "title": "Несвязанная запись", "content": "Министерство утвердило порядок и перечень государственных документов.",
+        }]})
+        self.assertEqual(unrelated["t09LocalMatches"], [])
+
+        article = "Банк России сохранил ключевую ставку на уровне 16 процентов."
+        similar = adapter.run_local({"text": article, "t09_candidates": [
+            {"newsId": "related", "title": "Ставка без изменений", "content": "Банк России сохранил ключевую ставку на уровне 16 процентов."},
+            {"newsId": "unrelated", "title": "Новый склад", "content": "Компания открыла склад и наняла сотрудников."},
+        ]})
+        self.assertEqual([item["newsId"] for item in similar["t09LocalMatches"]], ["related"])
+        self.assertGreater(similar["t09LocalMatches"][0]["similarity"], 0)
+
     def test_short_custom_article_is_rejected_with_a_user_facing_validation_error(self):
         with self.assertRaisesRegex(ValueError, "не короче 20 символов"):
             _load("news-intelligence").run({"text": "Слишком коротко"})
@@ -64,4 +80,3 @@ class IsolatedFixtureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

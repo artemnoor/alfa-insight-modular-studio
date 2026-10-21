@@ -8,21 +8,23 @@
 |---|---|---|
 | `npm run test:all` | PASS | Production build, 8 API contract tests, 94 existing Python tests, T08 (13), T09 (16), T10 (67), pipeline (7), and all 9 module suites. |
 | `npm run test:e2e:studio` | PASS | Chromium opened all 9 routes, ran each module, fixture suite, and repeat run. Product path passed with two real local company profiles. 0 page/console errors; no horizontal overflow at 1440, 1280, or 390 px. |
+| News Intelligence nonsense/short input | PASS | Local T09 now omits zero-similarity archive rows. In Chromium, gibberish returned 0 candidates with an explicit non-verdict message; an exact lexical match still returned similarity 1.000. Both made 0 provider calls. Short External AI input was stopped by browser validation before the module API or Polza was called. |
 | Module fixture suites | PASS | 29 prepared scenarios. AI Agent executes the orchestrator with deterministic tools; News Intelligence exercises T08/T09 with synthetic model responses. |
+| Backend readiness | PASS | Registry reports all 9 backends available; manual External AI is enabled for modules 02–08. This is readiness, not proof of each live AI workflow. |
 | Local-data modules | PASS / NOT_EVALUATED | BI, Personalization, and RAG ran against local data in Chromium. News Intelligence, Impact Analysis, and AI Agent loaded local records through their adapters; those modes correctly report that AI execution was not run. Evidence Verification accepted a matching 65-character quote and rejected a false quote in Chromium. These runs make no external AI calls. |
 | Client product | PASS | Real feed for `U_9250`; selected the critical-infrastructure lending event; opened source details; local research and chat returned; history opened; switched to `U_57706` and confirmed URL and company context updated. This generated local-demo entries in the staging clone's history. |
 | Responsive layout | PASS | All 9 module pages at 1440 and 1280 px; Studio shell, News Intelligence, Personalization, and client product at 390 px. No horizontal overflow. |
 | Live Polza / News Intelligence | PARTIAL | Two authorized provider attempts were used. The latest reached Polza successfully (5 calls; reported cost 0.19490048 ₽) but T08 received truncated JSON with `finish_reason=length` at the old 1000-token cap; T09 did not run. The runner cap is now 4096, diagnostics preserve usage and provider cause, and tests pass. A successful post-fix live call is not verified because the live-run allowance was used. The earlier attempt did not report cost. |
 | Live News Collector RSS | NOT RUN in this pass | No RSS fetch or SQLite write was made. The prior 2026-10-21 CBR RSS fetch is recorded in the historical section. |
 
-Chromium captures from the E2E run are in `output/playwright/modular-studio/` (ignored by Git). Additional captures: `output/playwright/evidence-local-supported.png`, `output/playwright/evidence-local-unsupported.png`, and `output/playwright/news-intelligence-polza-diagnostic.png`. Source CSVs, source SQLite, and source-project history were not cleared or modified.
+Chromium captures from the E2E run are in `output/playwright/modular-studio/` (ignored by Git). Additional captures: `output/playwright/evidence-local-supported.png`, `output/playwright/evidence-local-unsupported.png`, `output/playwright/news-intelligence-polza-diagnostic.png`, `output/playwright/news-intelligence-local-nonsense-fixed.png`, `output/playwright/news-intelligence-local-match-fixed.png`, and `output/playwright/news-intelligence-external-short-input.png`. Source CSVs, source SQLite, and source-project history were not cleared or modified.
 
 ## Current module status
 
 | Module | Browser / fixture | Local-data path | Current limitation |
 |---|---|---|---|
 | 01 News Collector | PASS; 3 prepared cases | N/A | RSS not re-fetched in this pass; outage path is fixture-covered. |
-| 02 News Intelligence | PASS; 4 prepared cases and actual external error surfaced | Local T09 archive search | Truncated provider response identified and token cap raised; successful post-fix live T08/T09 still unverified. |
+| 02 News Intelligence | PASS; 4 prepared cases, input validation, and actual external error surfaced | Local T09 archive search filters zero-score rows; exact overlap retained | Truncated provider response identified and token cap raised; successful post-fix live T08/T09 still unverified. |
 | 03 Business Intelligence | PASS; 3 prepared cases | PASS; real profile and graph | Fixed missing `profile` object in API output. Bank narrative mode not live-tested. |
 | 04 Personalization | PASS; 3 prepared cases | PASS; compared `U_9250` and `U_57706` | No independent labelled relevance set for Precision@K/Recall@K/NDCG. |
 | 05 Impact Analysis | PASS; 3 prepared cases | PASS; real event/profile inputs loaded | Local mode intentionally does not run AI analysis. |
@@ -75,4 +77,3 @@ Chromium captures are in `output/playwright/modular-studio/`: `studio-desktop.pn
 ## Interpretation
 
 The product and all nine workspaces open and execute their supported fixture flows. Modules 03, 04, and 06 also ran against configured local files; Module 01 fetched one public RSS feed; and the product completed a local research/chat path. News Intelligence's fixture proves the existing T08/T09 code can run end to end through the module interface, but synthetic model answers make its displayed topic/event unsuitable for judging classification quality. PASS means the interface executed its tested path; it does not assert that all source data is complete or that every AI/RAG result is semantically correct. In particular, the observed BM25 result was not a direct answer to the query.
-

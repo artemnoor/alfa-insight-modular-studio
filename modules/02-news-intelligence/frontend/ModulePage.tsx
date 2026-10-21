@@ -74,9 +74,11 @@ function renderResult(data: Record<string, any>) {
 
     {data.t09Embedding && <ResultSection title="T09 · локальный поиск похожих текстов">
       <p>Локальная модель: {resultText(data.t09Embedding.model)} · размерность {resultText(data.t09Embedding.dimensions)} · ненулевых признаков {resultText(data.t09Embedding.nonZeroDimensions)}.</p>
-      <ResultList items={comparisons} empty="Кандидаты архива не переданы. T09 вернул DIFFERENT по правилу пустого списка." renderItem={item => <article className="module-result-card">
-        <div className="module-result-card-top"><h4>{resultText(item.title)}</h4><ResultTag>{resultText(item.relation, 'локальное сходство')}</ResultTag></div>
-        <p>Локальное сходство: {Number(item.similarity || 0).toFixed(3)} · уверенность сравнения: {resultText(item.confidence)}</p>
+      <ResultList items={comparisons} empty={local
+        ? 'В архиве не найдено записей с ненулевым лексическим сходством. Это не вердикт о связи событий.'
+        : 'Кандидатов для сравнения нет; связь событий не оценена.'} renderItem={item => <article className="module-result-card">
+        <div className="module-result-card-top"><h4>{resultText(item.title || item.candidate?.title)}</h4><ResultTag>{resultText(item.relation, local ? 'лексический кандидат' : 'связь не оценена')}</ResultTag></div>
+        <p>Лексическое сходство: {Number(item.similarity ?? item.candidate?.similarity ?? 0).toFixed(3)} · уверенность сравнения: {resultText(item.confidence)}</p>
         <p>Архивная запись: {resultText(item.candidateId || item.newsId)} · дата: {resultText(item.publicationDate)}</p>
       </article>} />
       {decision.reason && <p>Вывод: {decision.reason}</p>}

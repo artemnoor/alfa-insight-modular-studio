@@ -20,5 +20,5 @@ const cosine = (left, right) => {
 const matches = (Array.isArray(input.candidates) ? input.candidates : []).map((item) => ({
   newsId: item.newsId, title: item.title, publicationDate: item.publicationDate ?? null,
   contentStatus: item.contentStatus || 'missing', similarity: Number(cosine(vector, vectorizeLocalText(String(item.content || ''))).toFixed(6)),
-})).sort((left, right) => right.similarity - left.similarity).slice(0, 10)
+})).filter((item) => item.similarity > 0).sort((left, right) => right.similarity - left.similarity).slice(0, 10)
 process.stdout.write(JSON.stringify({ model: LOCAL_VECTOR_MODEL, dimensions: vector.length, nonZeroDimensions: vector.filter(Boolean).length, matches }))
