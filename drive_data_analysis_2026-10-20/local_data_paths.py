@@ -1,38 +1,14 @@
-"""Resolve read-only source data paths without copying sensitive local files."""
+"""Compatibility import for shared data path helpers."""
 from __future__ import annotations
 
-import os
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+import sys
 
-ANALYTICS_DIR_NAME = "drive_data_analysis_2026-10-20"
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-
-def data_root() -> Path:
-    """Return the project root containing ``data/`` and the analytics folder."""
-    value = os.environ.get("ALFA_INSIGHT_DATA_ROOT", "").strip()
-    return Path(value).expanduser() if value else PROJECT_ROOT
-
-
-def analytics_file(name: str) -> Path:
-    return data_root() / ANALYTICS_DIR_NAME / name
-
-
-def company_profiles_csv() -> Path:
-    return analytics_file("df_Uid_data_hack.csv")
-
-
-def person_links_csv() -> Path:
-    return analytics_file("df_Fid_Uid_link_hack.csv")
-
-
-def payments_csv() -> Path:
-    return analytics_file("df_Uid_payment_hack.csv")
-
-
-def news_archive_sqlite() -> Path:
-    return data_root() / "data" / "news_pipeline.sqlite"
-
-
-def bank_knowledge_base() -> Path:
-    return analytics_file("stage2_kb.json")
+_CORE = Path(__file__).resolve().parents[1] / "shared" / "backend" / "local_data_paths.py"
+_SPEC = spec_from_file_location(__name__, _CORE)
+if _SPEC is None or _SPEC.loader is None:
+    raise ImportError("Shared local data path helpers are unavailable.")
+_MODULE = module_from_spec(_SPEC)
+sys.modules[__name__] = _MODULE
+_SPEC.loader.exec_module(_MODULE)

@@ -20,17 +20,17 @@ Studio и продукт работают в одном Vite-приложени�
 
 | Возможность | Канонический владелец | Модульный адаптер |
 |---|---|---|
-| RSS parsing, URL нормализация, SQLite dedup | `drive_data_analysis_2026-10-20/news_collector.py` | `modules/01-news-collector/backend/adapter.py` |
+| RSS parsing, URL нормализация, SQLite dedup | `modules/01-news-collector/backend/news_collector.py` | `modules/01-news-collector/backend/adapter.py` |
 | T08 taxonomy choice и T09 vectorizer | `backend/T08/src/classifier.mjs`, `backend/T09/src/local-embeddings.mjs` | `modules/02-news-intelligence/backend` |
-| Импорт графа, profile, связи и платежи | `drive_data_analysis_2026-10-20/business_graph.py` | `modules/03-business-intelligence/backend/adapter.py` |
-| Ранжирование персонализации | `drive_data_analysis_2026-10-20/personalization.py` | `modules/04-personalization/backend/adapter.py` |
-| Ограничители вывода о влиянии | `drive_data_analysis_2026-10-20/stage2_analyzer.py` | `modules/05-impact-analysis/backend/adapter.py` |
-| BM25 retrieval | `drive_data_analysis_2026-10-20/stage2_rag.py` | `modules/06-bank-research/backend/adapter.py` |
-| Планировщик и исполнение инструментов | `drive_data_analysis_2026-10-20/agent_orchestrator.py` | `modules/07-ai-agent/backend/adapter.py` |
-| Точная проверка цитат | `drive_data_analysis_2026-10-20/stage2_analyzer.py` | `modules/08-evidence-verification/backend/adapter.py` |
-| Клиентский путь | `src/insight/InsightApp.tsx`, `drive_data_analysis_2026-10-20/react_api.py` | `apps/product` и `modules/09-alfa-product` |
+| Импорт графа, profile, связи и платежи | `modules/03-business-intelligence/backend/business_graph.py` | `modules/03-business-intelligence/backend/adapter.py` |
+| Ранжирование персонализации | `modules/04-personalization/backend/personalization.py` | `modules/04-personalization/backend/adapter.py` |
+| Ограничители вывода о влиянии | `modules/05-impact-analysis/backend/stage2_analyzer.py` | `modules/05-impact-analysis/backend/adapter.py` |
+| Точная проверка цитат | `modules/08-evidence-verification/backend/evidence_core.py` | `modules/08-evidence-verification/backend/adapter.py` |
+| BM25 retrieval | `modules/06-bank-research/backend/stage2_rag.py` | `modules/06-bank-research/backend/adapter.py` |
+| Планировщик и исполнение инструментов | `modules/07-ai-agent/backend/agent_orchestrator.py` | `modules/07-ai-agent/backend/adapter.py` |
+| Клиентский путь и API | `modules/09-alfa-product/frontend/product/InsightApp.tsx`, `modules/09-alfa-product/backend/react_api.py` | `apps/product` и `modules/09-alfa-product` |
 
-Ни один scoring/retrieval/graph алгоритм не скопирован в модуль. Адаптеры и фикстуры изолируют запуск; текущие канонические реализации пока остаются в совместимых старых пакетах. T08/T09 и pipeline API остаются самостоятельными службами и не нужны для сценариев, которые используют их локальные функции.
+Аналитические ядра физически размещены в папках модулей-владельцев; старые Python пути сохранены тонкими compatibility wrappers. `shared/backend/local_data_paths.py` содержит только настройку путей источников, а `evidence_core.py` владеет общей проверкой цитат, используемой Impact Analysis и Evidence Verification. T08/T09 и pipeline API остаются самостоятельными службами и не нужны для сценариев, которые используют их локальные функции.
 
 ## Контракт
 

@@ -15,4 +15,6 @@ if (!folders[slug]) {
 }
 const python = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
 const result = spawnSync(python, ['-m','unittest','discover','-s',`modules/${folders[slug]}/tests`], { cwd: root, stdio: 'inherit', env: process.env })
-process.exit(result.status ?? 1)
+if (result.status !== 0) process.exit(result.status ?? 1)
+const fixtures = spawnSync(python, ['scripts/test-module-fixtures.py', slug], { cwd: root, stdio: 'inherit', env: process.env })
+process.exit(fixtures.status ?? 1)

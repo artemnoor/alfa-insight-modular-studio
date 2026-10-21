@@ -7,12 +7,12 @@
 | Check | Status | Evidence |
 |---|---|---|
 | `npm run test:all` | PASS | Build; 7 API contract tests; 94 existing Python tests; T08 13, T09 16, T10 67, pipeline 7; all 9 module suites. |
-| `npm run build` | PASS | TypeScript + Vite, 535 modules transformed. |
+| `npm run build` | PASS | TypeScript + Vite, 535 modules transformed after moving the product frontend into module 09. |
 | Module fixture scenarios | PASS | 28 scenarios across 9 modules (AI Agent has 4, each other module has 3); real in-process algorithms are used where available. |
-| Studio Chromium E2E | PASS | 9 cards/routes; run, fixture suite and repeat for each; 0 browser console/page errors. |
+| Studio Chromium E2E | PASS | Re-run after physical core migration: all 9 routes, run + fixture suite + repeat; 0 browser console/page errors. |
 | Local Data UI | PASS | Real company graph, same-event personalization comparison for two configured companies, and BM25 query against the configured 181-chunk bank index. External calls: 0. |
 | Product path | PASS | Company selection, 20-event feed, critical-infrastructure lending event, source disclosure, local research, local chat, research history, and company switch. |
-| Responsive layout | PASS | 1440, 1280, and 390 px; no horizontal overflow in Studio, module, or product pages. |
+| Responsive layout | PASS | Re-run after migration at 1440, 1280, and 390 px; no horizontal overflow in Studio, module, or product pages. |
 | Standalone commands | PASS | `npm run studio:module -- personalization` opened its direct route; `npm run product` opened `/`. |
 | Live external AI | BLOCKED | One prior authorized synthetic-only attempt timed out at 125 s; final provider cost was not reported. It was not repeated; external opt-in remains off. |
 
