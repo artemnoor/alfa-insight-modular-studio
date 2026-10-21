@@ -154,7 +154,7 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(content=final_result()),
         ]
         result, _ = self.run_script(script)
-        first_data_call = next(x for x in result["tool_trace"] if x.get("tool") == "get_company_profile")
+        first_data_call = next(x for x in result["tool_trace"] if x.get("kind") == "tool_call" and x.get("tool") == "get_company_profile")
         self.assertEqual("error", first_data_call["status"])
         self.assertIn("Сначала", first_data_call["result"]["error"])
         self.assertEqual("partial", result["status"])
@@ -188,7 +188,8 @@ class AgentOrchestratorTests(unittest.TestCase):
         self.assertNotIn("get_network_context", tools_a)
         self.assertIn("get_network_context", tools_b)
         self.assertNotIn("search_bank_research", tools_b)
-        network_result = next(step["result"] for step in result_b["tool_trace"] if step.get("tool") == "get_network_context")
+        network_result = next(step["result"] for step in result_b["tool_trace"]
+                              if step.get("kind") == "tool_call" and step.get("tool") == "get_network_context")
         self.assertNotIn("F_PRIVATE", json.dumps(network_result))
 
     def test_agent_revises_plan_after_new_evidence_and_unlocks_a_new_tool(self):
@@ -208,7 +209,8 @@ class AgentOrchestratorTests(unittest.TestCase):
         result, _ = self.run_script(script, network={"payment_metrics": {"incoming_counterparties": 2}})
         self.assertEqual(2, len(result["analysis"]["plan_history"]))
         self.assertIn("get_network_context", result["analysis"]["plan"]["selected_tools"])
-        network_step = next(step for step in result["tool_trace"] if step.get("tool") == "get_network_context")
+        network_step = next(step for step in result["tool_trace"]
+                            if step.get("kind") == "tool_call" and step.get("tool") == "get_network_context")
         self.assertEqual("ok", network_step["status"])
         self.assertEqual(2, result["analysis"]["plan_history"][1]["version"])
 
@@ -219,7 +221,8 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(content=final_result()),
         ]
         result, _ = self.run_script(script)
-        rejected = next(step for step in result["tool_trace"] if step.get("tool") == "execute_sql")
+        rejected = next(step for step in result["tool_trace"]
+                        if step.get("kind") == "tool_call" and step.get("tool") == "execute_sql")
         self.assertEqual("error", rejected["status"])
         self.assertIn("allowlist", rejected["result"]["error"])
 
@@ -230,7 +233,8 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(content=final_result()),
         ]
         result, _ = self.run_script(script)
-        step = next(step for step in result["tool_trace"] if step.get("tool") == "get_company_profile")
+        step = next(step for step in result["tool_trace"]
+                    if step.get("kind") == "tool_call" and step.get("tool") == "get_company_profile")
         self.assertEqual("error", step["status"])
         self.assertIn("Неизвестные параметры", step["result"]["error"])
 
@@ -241,7 +245,8 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(content=final_result()),
         ]
         result, _ = self.run_script(script)
-        step = next(step for step in result["tool_trace"] if step.get("tool") == "get_event_facts")
+        step = next(step for step in result["tool_trace"]
+                    if step.get("kind") == "tool_call" and step.get("tool") == "get_event_facts")
         self.assertEqual("error", step["status"])
         self.assertIn("Неизвестные параметры", step["result"]["error"])
 
@@ -258,8 +263,9 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
         result, _ = self.run_script(script, rag_search=broken_rag)
-        failure = next(step for step in result["tool_trace"] if step.get("tool") == "search_bank_research")
-        self.assertEqual("error", failure["status"])
+        failure = next(step for step in result["tool_trace"]
+                       if step.get("kind") == "tool_call" and step.get("tool") == "search_bank_research")
+        self.assertEqual("unavailable", failure["status"])
         self.assertTrue(failure["result"]["retryable"])
         self.assertEqual("unclear", result["analysis"]["impact"])
         self.assertEqual("partial", result["status"])
@@ -367,7 +373,8 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
         result, _ = self.run_script(script)
-        step = next(step for step in result["tool_trace"] if step.get("tool") == "search_related_news")
+        step = next(step for step in result["tool_trace"]
+                    if step.get("kind") == "tool_call" and step.get("tool") == "search_related_news")
         self.assertEqual("локальный архив T08/T09", step["result"]["search_scope"])
         self.assertEqual("E2", step["result"]["results"][0]["event_id"])
 
@@ -384,9 +391,11 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
         result, _ = self.run_script(script, rag_search=broken)
-        rag = next(step for step in result["tool_trace"] if step.get("tool") == "search_bank_research")
-        profile = next(step for step in result["tool_trace"] if step.get("tool") == "get_company_profile")
-        self.assertEqual("error", rag["status"])
+        rag = next(step for step in result["tool_trace"]
+                   if step.get("kind") == "tool_call" and step.get("tool") == "search_bank_research")
+        profile = next(step for step in result["tool_trace"]
+                       if step.get("kind") == "tool_call" and step.get("tool") == "get_company_profile")
+        self.assertEqual("unavailable", rag["status"])
         self.assertEqual("ok", profile["status"])
 
     def test_repeat_request_uses_persistent_cache_and_records_history(self):
@@ -424,6 +433,69 @@ class AgentOrchestratorTests(unittest.TestCase):
         self.assertEqual(4, len(calls))
         self.assertEqual("complete", result["plan_status"])
         self.assertEqual("completed", next(step["status"] for step in result["plan_steps"] if step["tool"] == "search_bank_research"))
+        rejected = next(step for step in result["tool_trace"]
+                        if step.get("status") == "final_rejected_plan_checks_executed")
+        self.assertEqual(["search_bank_research"], rejected["tools"])
+        state_trace = [step["status"] for step in result["tool_trace"]
+                       if step.get("kind") == "plan_step" and step.get("tool") == "search_bank_research"]
+        self.assertEqual(["planned", "running", "completed"], state_trace)
+
+    def test_agent_can_skip_a_planned_optional_check_only_with_a_reason(self):
+        rag_queries = []
+        script = [
+            envelope(calls=[call_tool("submit_research_plan", plan("search_bank_research"))]),
+            envelope(calls=[call_tool("get_company_profile", {}), call_tool("get_event_facts", {}, "c2")]),
+            envelope(calls=[call_tool("skip_research_step", {
+                "tool": "search_bank_research", "reason": "Нет подтверждённого кредитного продукта в профиле компании."
+            })]),
+            envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
+        ]
+        result, _ = self.run_script(script, rag_search=lambda query, *args, **kwargs: rag_queries.append(query))
+        bank_step = next(step for step in result["plan_steps"] if step["tool"] == "search_bank_research")
+        self.assertEqual("skipped", bank_step["status"])
+        self.assertIn("Нет подтверждённого кредитного продукта", bank_step["reason"])
+        self.assertEqual([], rag_queries)
+        trace_step = next(step for step in result["tool_trace"]
+                          if step.get("kind") == "plan_step" and step.get("tool") == "search_bank_research"
+                          and step.get("status") == "skipped")
+        self.assertEqual(bank_step["reason"], trace_step["reason"])
+        self.assertEqual("complete", result["plan_status"])
+
+    def test_unavailable_planned_tool_is_traced_and_makes_result_partial(self):
+        script = [
+            envelope(calls=[call_tool("submit_research_plan", plan("get_network_context"))]),
+            envelope(calls=[call_tool("get_company_profile", {}), call_tool("get_event_facts", {}, "c2")]),
+            envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
+            envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
+        ]
+        result, _ = self.run_script(script)
+        network_step = next(step for step in result["plan_steps"] if step["tool"] == "get_network_context")
+        self.assertEqual("unavailable", network_step["status"])
+        self.assertIn("бизнес-графа недоступен", network_step["reason"])
+        tool_call = next(step for step in result["tool_trace"]
+                         if step.get("tool") == "get_network_context" and step.get("kind") == "tool_call")
+        self.assertEqual("unavailable", tool_call["status"])
+        self.assertEqual("partial", result["plan_status"])
+        self.assertEqual("partial", result["status"])
+
+    def test_failed_step_and_completed_step_are_reported_as_a_partial_plan(self):
+        script = [
+            envelope(calls=[call_tool("submit_research_plan", plan("search_bank_research", "search_related_news"))]),
+            envelope(calls=[call_tool("get_company_profile", {}), call_tool("get_event_facts", {}, "c2")]),
+            envelope(calls=[call_tool("search_bank_research", {"query": ""})]),
+            envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
+            envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
+        ]
+        result, _ = self.run_script(script)
+        statuses = {step["tool"]: step["status"] for step in result["plan_steps"]}
+        self.assertEqual("failed", statuses["search_bank_research"])
+        self.assertEqual("completed", statuses["search_related_news"])
+        self.assertEqual("partial", result["plan_status"])
+        self.assertEqual("partial", result["status"])
+        failed_trace = next(step for step in result["tool_trace"]
+                            if step.get("kind") == "plan_step" and step.get("tool") == "search_bank_research"
+                            and step.get("status") == "failed")
+        self.assertTrue(failed_trace["reason"])
 
     def test_research_question_is_sent_to_agent_and_part_of_cache_key(self):
         first, calls = self.run_script(self.base_script(), research_question="Проверь возможное влияние на кредитование.")
@@ -466,7 +538,8 @@ class AgentOrchestratorTests(unittest.TestCase):
         result, _ = self.run_script(script)
         self.assertEqual(["get_company_profile", "get_event_facts", "search_bank_research"],
                          result["analysis"]["plan"]["selected_tools"])
-        bank_search = next(step for step in result["tool_trace"] if step.get("tool") == "search_bank_research")
+        bank_search = next(step for step in result["tool_trace"]
+                           if step.get("kind") == "tool_call" and step.get("tool") == "search_bank_research")
         self.assertEqual("error", bank_search["status"])
         self.assertTrue(bank_search["result"]["retryable"])
 
@@ -488,7 +561,8 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
         result, _ = self.run_script(script, rag_search=rag_search)
-        searches = [step for step in result["tool_trace"] if step.get("tool") == "search_bank_research"]
+        searches = [step for step in result["tool_trace"]
+                    if step.get("kind") == "tool_call" and step.get("tool") == "search_bank_research"]
         self.assertEqual(["кредитование"], calls_to_search)
         self.assertEqual(["ok", "cached"], [step["status"] for step in searches])
 

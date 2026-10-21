@@ -63,8 +63,14 @@ function LabWorkspace({ onReturn }: { onReturn: () => void }) {
 }
 
 export default function App() {
-  const [showLab, setShowLab] = useState(false)
+  const [showLab, setShowLab] = useState(() => new URLSearchParams(window.location.search).get('view') === 'internal')
+  const returnHome = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('view')
+    window.history.replaceState({}, '', url)
+    setShowLab(false)
+  }
   return showLab
-    ? <LabWorkspace onReturn={() => setShowLab(false)} />
-    : <InsightApp onOpenLab={() => setShowLab(true)} />
+    ? <LabWorkspace onReturn={returnHome} />
+    : <InsightApp />
 }

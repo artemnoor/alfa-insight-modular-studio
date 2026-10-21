@@ -116,7 +116,10 @@ a:hover { color: #7e1520; }
 .insight-analysis-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .insight-company-context { margin: 7px 0 0; color: var(--insight-muted); font-size: 12px; line-height: 1.4; }
 .insight-company-context strong { color: #25272a; }
-.insight-content-status { flex: 0 0 auto; padding: 6px 8px; border-radius: 5px; background: #eef3f4; color: #47595b; font-size: 10px; font-weight: 650; }
+.insight-content-status { flex: 0 0 auto; padding: 6px 8px; border: 0; border-radius: 5px; background: #eef3f4; color: #47595b; font-size: 10px; font-weight: 650; }
+.insight-content-status[href] { cursor: pointer; text-decoration: none; }
+.insight-content-status[href]:hover { background: #e4ecee; color: #24383b; }
+.insight-content-status[href]:focus-visible { outline: 2px solid #176b5b; outline-offset: 2px; }
 .status-excerpt { background: #fff5df; color: #735b20; }
 .status-missing { background: #f2f3f4; color: #595e66; }
 .insight-event-title { max-width: 820px; margin: 17px 0 18px; font-size: clamp(24px, 2.7vw, 34px); font-weight: 685; letter-spacing: -.045em; line-height: 1.18; }

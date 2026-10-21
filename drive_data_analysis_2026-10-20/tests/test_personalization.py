@@ -397,6 +397,9 @@ class PersonalizationTests(unittest.TestCase):
             ["specific-program", "broad-sector", "global-rate"],
         )
         self.assertEqual([item["ranking_tier"] for item in ranked], [1, 2, 3])
+        specific_actions = " ".join(chain["action"] for chain in ranked[0]["chains"])
+        self.assertIn("действующий контракт или проект", specific_actions)
+        self.assertIn("категория заёмщика", specific_actions)
 
     def test_excerpts_and_old_events_lower_quality_or_freshness(self) -> None:
         full = stage6.score_event(self.profile, self.event, today=self.today)

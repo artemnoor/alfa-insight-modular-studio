@@ -45,15 +45,30 @@ function evidenceClass(direction: string) {
   return direction === 'unclear' ? 'insight-uncertainty' : 'insight-supported'
 }
 
-type Props = { onOpenLab: () => void }
+function priorityNarrative(event: FeedEvent) {
+  if (event.priorityStatus === 'potential_match') return 'Есть сигнал возможной связи с компанией. Фактическое влияние ещё не установлено.'
+  if (event.priorityStatus === 'weak_match') return 'Есть тематический сигнал, который стоит проверить; фактическое влияние не подтверждено.'
+  if (event.priorityStatus === 'insufficient_evidence') return 'Данных пока недостаточно, чтобы определить связь события с компанией.'
+  return 'Персональная связь с компанией не найдена. По доступным данным влияние не подтверждено.'
+}
 
-export default function InsightApp({ onOpenLab }: Props) {
+function noChainAction(event: FeedEvent) {
+  if (event.priorityStatus === 'no_confirmed_match') {
+    return 'Отдельное действие из доступных данных не следует. Откройте источник, если тема относится к текущему проекту или договору компании.'
+  }
+  if (event.missingData.length > 0) {
+    return `Для уточнения не хватает данных: ${event.missingData.slice(0, 2).join('; ')}.`
+  }
+  return 'Для точного вывода нужны сведения о применимых договорах и фактических операциях компании.'
+}
+
+export default function InsightApp() {
   const [selection, setSelection] = useState(initialSelection)
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [loadingWorkspace, setLoadingWorkspace] = useState(true)
   const [workspaceError, setWorkspaceError] = useState('')
   const [reloadToken, setReloadToken] = useState(0)
-  const [mobileDetail, setMobileDetail] = useState(false)
+  const [mobileDetail, setMobileDetail] = useState(() => Boolean(new URLSearchParams(window.location.search).get('event')))
   const [companyPickerOpen, setCompanyPickerOpen] = useState(false)
   const [companySearch, setCompanySearch] = useState('')
   const [companyMatches, setCompanyMatches] = useState<CompanyCard[]>([])
@@ -317,7 +332,6 @@ export default function InsightApp({ onOpenLab }: Props) {
               </div>
             )}
           </div>
-          <button className="insight-lab-link" type="button" onClick={onOpenLab}>Инструменты</button>
         </div>
       </header>
 
@@ -444,7 +458,9 @@ function EventAnalysis(props: EventAnalysisProps) {
           <p className="insight-eyebrow">{event.source} <span aria-hidden="true">·</span> {formatDate(event.publishedAt)}</p>
           <p className="insight-company-context">Анализ для <strong>{workspace.company.id}</strong> · {workspace.company.industry} · {workspace.company.region}</p>
         </div>
-        <span className={`insight-content-status status-${event.contentStatus}`}>{sourceKind(event)}</span>
+        {event.url
+          ? <a className={`insight-content-status status-${event.contentStatus}`} href={event.url} target="_blank" rel="noreferrer" aria-label={`${sourceKind(event)} — открыть публикацию ${event.source}`}>{sourceKind(event)} ↗</a>
+          : <span className={`insight-content-status status-${event.contentStatus}`}>{sourceKind(event)}</span>}
       </div>
 
       <h2 className="insight-event-title">{event.title}</h2>
@@ -453,7 +469,7 @@ function EventAnalysis(props: EventAnalysisProps) {
 
       <div className={`insight-uncertainty ${evidenceClass(event.impactDirection)}`}>
         <span className="insight-status-dot" aria-hidden="true" />
-        <p><strong>{priorityLabel(event)}.</strong> Возможная связь обнаружена, но фактическое влияние на компанию пока не установлено.</p>
+        <p><strong>{priorityLabel(event)}.</strong> {priorityNarrative(event)}</p>
         <span className="insight-priority-explainer">{safeScoreLabel(event.score)}</span>
       </div>
 
@@ -491,7 +507,7 @@ function EventAnalysis(props: EventAnalysisProps) {
 
       <section className="insight-section insight-actions-section">
         <h3>Что проверить</h3>
-        {suggestedActions.length > 0 ? <ol className="insight-next-steps">{suggestedActions.map((action) => <li key={action}>{action}</li>)}</ol> : <p>Сверьте условия из первоисточника с текущими договорами и операциями компании.</p>}
+        {suggestedActions.length > 0 ? <ol className="insight-next-steps">{suggestedActions.map((action) => <li key={action}>{action}</li>)}</ol> : <p>{noChainAction(event)}</p>}
       </section>
 
       {event.confirmedFacts.length > 0 && (
