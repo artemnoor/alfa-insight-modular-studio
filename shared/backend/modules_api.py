@@ -106,6 +106,21 @@ def _check(data: dict[str, Any], expected: list[dict[str, Any]]) -> list[dict[st
     return checks
 
 
+def _checks_status(checks: list[dict[str, Any]]) -> str:
+    if not checks:
+        return "NOT_EVALUATED"
+    return "PASS" if all(item["passed"] for item in checks) else "FAIL"
+
+
+def _test_suite_status(rows: list[dict[str, Any]]) -> str:
+    statuses = {row.get("status") for row in rows}
+    if "FAIL" in statuses:
+        return "FAIL"
+    if "NOT_EVALUATED" in statuses:
+        return "PARTIAL" if "PASS" in statuses else "NOT_EVALUATED"
+    return "PASS" if rows else "NOT_EVALUATED"
+
+
 def _external_validation(data: dict[str, Any]) -> list[dict[str, Any]]:
     usage = data.get("tokenUsage", {})
     reported_cost = usage.get("cost_rub")
@@ -179,11 +194,11 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
                 try:
                     result = adapter.run(dict(scenario.get("input") or {}))
                     checks = _check(result, scenario.get("expect", []))
-                    rows.append({"id": scenario["id"], "name": scenario["name"], "status": "PASS" if all(c["passed"] for c in checks) else "FAIL", "checks": checks})
+                    rows.append({"id": scenario["id"], "name": scenario["name"], "status": _checks_status(checks), "checks": checks})
                 except Exception as exc:
                     expected_error = scenario.get("expectError")
                     rows.append({"id": scenario["id"], "name": scenario["name"], "status": "PASS" if expected_error == type(exc).__name__ else "FAIL", "expectedError": expected_error, "actualError": type(exc).__name__, "error": str(exc)[:200]})
-            state = "PASS" if all(row["status"] == "PASS" for row in rows) else "FAIL"
+            state = _test_suite_status(rows)
             LAST[slug] = state
             return 200, {"contractVersion": "1.0", "module": slug, "mode": "Fixture", "status": state, "scenarios": rows}
         scenario_id = str(body.get("scenarioId") or "")
@@ -215,9 +230,10 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
                        "expected": {"equals": "ok"}, "actual": run_status}]
         else:
             checks = _check(data, (scenario or {}).get("expect", []))
-        state = "PASS" if all(item["passed"] for item in checks) else "FAIL"
+        state = _checks_status(checks)
         LAST[slug] = state
-        return 200, {"contractVersion": "1.0", "module": slug, "mode": mode, "status": "ok" if state == "PASS" else "validation_failed",
+        run_status = {"PASS": "ok", "FAIL": "validation_failed", "NOT_EVALUATED": "not_evaluated"}[state]
+        return 200, {"contractVersion": "1.0", "module": slug, "mode": mode, "status": run_status,
                      "data": data, "provenance": data.get("provenance", {}), "validation": {"status": state, "checks": checks}}
     except (ValueError, KeyError) as exc:
         return 400, {"contractVersion": "1.0", "error": {"code": "INVALID_INPUT", "message": str(exc)[:350]}}

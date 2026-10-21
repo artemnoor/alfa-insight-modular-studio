@@ -32,6 +32,14 @@ function displayCheckValue(value: unknown) {
   return display(value).slice(0, 220)
 }
 
+function statusTone(status?: string) {
+  return status === 'PASS' ? 'pass' : status === 'FAIL' ? 'fail' : 'neutral'
+}
+
+function statusTextClass(status?: string) {
+  return status === 'PASS' ? 'check-pass' : status === 'FAIL' ? 'check-fail' : 'check-neutral'
+}
+
 export function ModuleWorkbench({ spec }: Props) {
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [selected, setSelected] = useState('')
@@ -154,17 +162,18 @@ export function ModuleWorkbench({ spec }: Props) {
         {error && <div className="module-error" role="alert">{error}</div>}
       </form>
       <section className="module-panel module-results" aria-live="polite">
-        <div className="module-panel-title"><div><h2>Результат</h2><p>{result?.mode === 'live_feed' ? 'Результат реального запроса к публичному источнику. Сбор и ошибки источника отражены ниже.' : 'Фикстурные сценарии используют реальные локальные алгоритмы. Источники и допущения указаны в результате.'}</p></div>{result && <span className={`module-badge module-badge--${result.validation?.status === 'PASS' ? 'pass' : 'neutral'}`}>{result.validation?.status || result.status}</span>}</div>
+        <div className="module-panel-title"><div><h2>Результат</h2><p>{result?.mode === 'live_feed' ? 'Результат реального запроса к публичному источнику. Сбор и ошибки источника отражены ниже.' : 'Фикстурные сценарии используют реальные локальные алгоритмы. Источники и допущения указаны в результате.'}</p></div>{result && <span className={`module-badge module-badge--${statusTone(result.validation?.status)}`}>{result.validation?.status || result.status}</span>}</div>
         {!result && !testRun && !busy && <div className="module-empty"><strong>Сценарий готов к запуску</strong><span>Выберите фикстуру или введите собственные данные.</span></div>}
         {busy && <div className="module-loading"><span className="module-spinner" />{busy === 'tests' ? `Выполняю набор из ${scenarios.length} сценариев…` : 'Передаю данные адаптеру и запускаю алгоритм…'}</div>}
         {result && <>
+          {result.validation?.status === 'NOT_EVALUATED' && <p className="module-result-inline-note">Запуск выполнен, но для этих входных данных нет эталонных проверок. Результат не оценён.</p>}
           {spec.renderResult
             ? <div className={`module-specific-result module-specific-result--${spec.id}`}>{spec.renderResult(result.data)}</div>
             : <div className="module-highlights">{spec.highlights.map(item => <article className="module-highlight" key={item.path}><span>{item.label}</span><strong>{display(at(result.data, item.path)).slice(0, 350)}</strong></article>)}</div>}
           {result.validation?.checks?.length > 0 && <div className="module-checks"><h3>Ожидалось → получено</h3>{result.validation.checks.map((check: any, index: number) => <div className="module-check" key={index}><span className={check.passed ? 'check-pass' : 'check-fail'}>{check.passed ? 'PASS' : 'FAIL'}</span><span>{check.name}</span><code title={display(check.actual)}>{displayCheckValue(check.actual)}</code></div>)}</div>}
           <details className="module-details"><summary>Полный результат и технические детали</summary><pre>{JSON.stringify(result, null, 2)}</pre></details>
         </>}
-        {testRun && <div className="module-test-list"><h3>Набор сценариев <span className={`module-badge module-badge--${testRun.status === 'PASS' ? 'pass' : 'fail'}`}>{testRun.status}</span></h3>{testRun.scenarios.map((item: any) => <details className="module-test" key={item.id}><summary><span className={item.status === 'PASS' ? 'check-pass' : 'check-fail'}>{item.status}</span><span>{item.name}</span></summary>{item.checks?.map((check: any, index: number) => <div className="module-check" key={index}><span>{check.passed ? 'PASS' : 'FAIL'}</span><span>{check.name}</span><code>{display(check.actual)}</code></div>)}{item.error && <p>{item.error}</p>}</details>)}</div>}
+        {testRun && <div className="module-test-list"><h3>Набор сценариев <span className={`module-badge module-badge--${statusTone(testRun.status)}`}>{testRun.status}</span></h3>{testRun.status === 'PARTIAL' && <p className="module-result-inline-note">Часть сценариев не имеет эталонных проверок, поэтому общий результат — частичный.</p>}{testRun.status === 'NOT_EVALUATED' && <p className="module-result-inline-note">В сценариях нет эталонных проверок. Набор не оценён.</p>}{testRun.scenarios.map((item: any) => <details className="module-test" key={item.id}><summary><span className={statusTextClass(item.status)}>{item.status}</span><span>{item.name}</span></summary>{item.checks?.map((check: any, index: number) => <div className="module-check" key={index}><span>{check.passed ? 'PASS' : 'FAIL'}</span><span>{check.name}</span><code>{display(check.actual)}</code></div>)}{item.error && <p>{item.error}</p>}</details>)}</div>}
         {history.length > 1 && spec.id === 'ai-agent' && <details className="module-details"><summary>Сравнение запусков в этой сессии ({history.length - 1} предыдущих)</summary><div className="module-result-comparison"><div className="module-result-comparison-head"><span>Параметр</span><span>Текущий</span><span>Предыдущий</span></div>{[
           {label:'Статус',current:agentResult?.status,previous:history[1].body?.data?.status},
           {label:'Вызовы инструментов',current:(agentResult?.toolCalls || []).map((call:any)=>call.tool).join(', '),previous:(history[1].body?.data?.toolCalls || []).map((call:any)=>call.tool).join(', ')},

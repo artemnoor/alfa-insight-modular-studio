@@ -2,7 +2,8 @@
 from typing import Any, Literal, TypedDict
 
 DataMode = Literal["fixture", "local_data", "external_ai", "live_feed"]
-ValidationStatus = Literal["PASS", "FAIL"]
+ValidationStatus = Literal["PASS", "FAIL", "NOT_EVALUATED"]
+TestSuiteStatus = Literal["PASS", "FAIL", "NOT_EVALUATED", "PARTIAL"]
 
 class ModuleRunRequest(TypedDict, total=False):
     mode: DataMode
@@ -23,7 +24,7 @@ class ModuleRunEnvelope(TypedDict):
     contractVersion: Literal["1.0"]
     module: str
     mode: DataMode
-    status: Literal["ok", "validation_failed"]
+    status: Literal["ok", "validation_failed", "not_evaluated"]
     data: dict[str, Any]
     provenance: dict[str, Any]
     validation: dict[str, Any]

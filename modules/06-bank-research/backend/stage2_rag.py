@@ -39,16 +39,34 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
-@lru_cache(maxsize=1)
-def load_index() -> tuple[dict[str, Any], BM25Okapi, list[list[str]]]:
-    data = json.loads(KB_PATH.read_text(encoding="utf-8"))
+SearchIndex = tuple[dict[str, Any], BM25Okapi, list[list[str]]]
+
+
+def build_index(data: dict[str, Any]) -> SearchIndex:
     chunks = data["chunks"]
     corpus = [tokenize(item["text"]) for item in chunks]
     return data, BM25Okapi(corpus), corpus
 
 
-def retrieve(news_title: str, news_text: str, top_k: int = 5, min_matched_terms: int = 2) -> dict[str, Any]:
-    data, bm25, corpus = load_index()
+@lru_cache(maxsize=1)
+def load_index() -> SearchIndex:
+    return load_index_from_path(KB_PATH)
+
+
+def load_index_from_path(path: Path) -> SearchIndex:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return build_index(data)
+
+
+def retrieve(
+    news_title: str,
+    news_text: str,
+    top_k: int = 5,
+    min_matched_terms: int = 2,
+    *,
+    index: SearchIndex | None = None,
+) -> dict[str, Any]:
+    data, bm25, corpus = index if index is not None else load_index()
     query_tokens = tokenize(f"{news_title}\n{news_text}")
     if not query_tokens:
         return {"query_tokens": [], "matches": [], "status": "no_query_terms"}

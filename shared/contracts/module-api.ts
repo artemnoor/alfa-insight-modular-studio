@@ -1,5 +1,6 @@
 export type ModuleDataMode = 'fixture' | 'local_data' | 'external_ai' | 'live_feed'
-export type ValidationStatus = 'PASS' | 'FAIL'
+export type ValidationStatus = 'PASS' | 'FAIL' | 'NOT_EVALUATED'
+export type TestSuiteStatus = ValidationStatus | 'PARTIAL'
 
 export type ModuleApiError = {
   contractVersion: '1.0'
@@ -17,7 +18,7 @@ export type ModuleRunResponse<TData = Record<string, unknown>> = {
   contractVersion: '1.0'
   module: string
   mode: ModuleDataMode
-  status: 'ok' | 'validation_failed'
+  status: 'ok' | 'validation_failed' | 'not_evaluated'
   data: TData
   provenance: Record<string, unknown>
   validation: { status: ValidationStatus; checks: ModuleCheck[] }
@@ -27,6 +28,6 @@ export type ModuleTestSuiteResponse = {
   contractVersion: '1.0'
   module: string
   mode: 'Fixture'
-  status: ValidationStatus
+  status: TestSuiteStatus
   scenarios: Array<{ id: string; name: string; status: ValidationStatus; checks?: ModuleCheck[]; error?: string }>
 }
