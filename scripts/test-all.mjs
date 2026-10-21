@@ -10,6 +10,7 @@ function run(command, args, cwd = root) {
   if (result.status !== 0) process.exit(result.status ?? 1)
 }
 run('npm', ['run','build'])
+run(python, ['-m','unittest','discover','-s','tests'])
 run(python, ['-m','unittest','discover','-s','tests'], path.join(root,'drive_data_analysis_2026-10-20'))
 const t08 = readdirSync(path.join(root,'backend/T08/test')).filter(name => name.endsWith('.test.mjs')).map(name => path.join('backend/T08/test',name))
 run(process.execPath, ['--test', ...t08])

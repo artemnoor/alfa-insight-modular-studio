@@ -16,7 +16,7 @@ const pages: Record<string, React.ComponentType> = {
   'impact-analysis': ImpactAnalysis, 'bank-research': BankResearch,
   'ai-agent': AIAgent, 'evidence-verification': EvidenceVerification, 'alfa-product': AlfaProduct,
 }
-type ModuleStatus = { id: string; name: string; purpose: string; backendAvailable: boolean; mode: string; localDataAvailable: boolean; externalAiEnabled: boolean; lastResult?: string }
+type ModuleStatus = { id: string; name: string; purpose: string; backendAvailable: boolean; mode: string; localDataAvailable: boolean; externalAiAvailable: boolean; externalAiEnabled: boolean; lastResult?: string }
 
 export default function StudioApp() {
   const [modules, setModules] = useState<ModuleStatus[]>([])
@@ -44,13 +44,13 @@ export default function StudioApp() {
         ['ai-agent','AI Agent Studio','План и исполненные инструменты.'],
         ['evidence-verification','Проверка доказательств','Сверка цитат с исходным текстом.'],
         ['alfa-product','Alfa Insight Product','Рабочий пользовательский продукт.'],
-      ].map(([id,name,purpose]) => ({id,name,purpose,backendAvailable:false,mode:'Fixture',localDataAvailable:false,externalAiEnabled:false})) as ModuleStatus[]).map((item,index) => <article className="studio-card" key={item.id}>
+      ].map(([id,name,purpose]) => ({id,name,purpose,backendAvailable:false,mode:'Fixture',localDataAvailable:false,externalAiAvailable:false,externalAiEnabled:false})) as ModuleStatus[]).map((item,index) => <article className="studio-card" key={item.id}>
         <div className="studio-card-top"><span className="studio-index">{String(index+1).padStart(2,'0')}</span><span className={`studio-health ${item.backendAvailable ? 'is-ready' : 'is-down'}`}><i />{item.backendAvailable ? 'Backend доступен' : 'Backend не проверен'}</span></div>
         <h2>{item.name}</h2><p>{item.purpose}</p>
         <div className="studio-card-meta"><span>Данные: {item.mode}</span><span>Последняя проверка: {item.lastResult || '—'}</span></div>
         <a className="studio-open" href={`/studio/${item.id}`}>Открыть модуль <span>→</span></a>
       </article>)}
     </section>
-    <footer className="studio-footer"><span>Fixture-сценарии используют синтетические данные.</span><span>Внешние AI-вызовы отключены.</span></footer>
+    <footer className="studio-footer"><span>Fixture-сценарии используют синтетические данные.</span><span>Внешний AI по умолчанию выключен; ручной opt-in доступен только агенту.</span></footer>
   </main>
 }

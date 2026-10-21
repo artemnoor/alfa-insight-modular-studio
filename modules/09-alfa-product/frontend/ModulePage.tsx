@@ -1,4 +1,14 @@
 import { ModuleWorkbench, type ModuleSpec } from '../../../shared/frontend/ModuleWorkbench'
+import { ResultSection, ResultTag, resultText } from '../../../shared/frontend/ModuleResult'
+
+function renderResult(data: Record<string, any>) {
+  return <>
+    <ResultSection title="Клиентский продукт"><article className="module-result-card"><div className="module-result-card-top"><h4>Основной интерфейс доступен по адресу /</h4><ResultTag tone="good">Отдельно от Studio</ResultTag></div><p>В клиентском приложении доступны лента, карточка события, анализ, ассистент и история — при подключённых профилях компаний и архиве.</p><p><a href="/" target="_blank" rel="noreferrer">Открыть пользовательский продукт ↗</a></p></article></ResultSection>
+    <ResultSection title="Путь пользователя"><div className="module-result-list">{(Array.isArray(data.availableFlows) ? data.availableFlows : []).map((flow: unknown,index:number) => <article className="module-result-card" key={index}><h4>{resultText(flow)}</h4></article>)}</div></ResultSection>
+    <p className="module-result-inline-note">Эта страница Studio не заменяет пользовательское приложение. Полный путь зависит от локальных профилей компаний и новостного архива.</p>
+  </>
+}
+
 export const moduleSpec = {
   "id": "alfa-product",
   "title": "Alfa Insight Product",
@@ -26,6 +36,7 @@ export const moduleSpec = {
       "path": "implementation"
     }
   ],
+  renderResult,
   "localData": false,
   "productLink": true
 }

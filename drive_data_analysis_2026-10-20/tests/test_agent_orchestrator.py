@@ -693,6 +693,17 @@ class AgentOrchestratorTests(unittest.TestCase):
         self.assertEqual("partial", result["status"])
         self.assertIn("стоимости", result["stop_reason"])
 
+    def test_missing_provider_cost_stops_further_model_calls(self):
+        script = [
+            envelope(calls=[call_tool("submit_research_plan", plan("get_company_profile"))], cost=None),
+            envelope(content=final_result()),
+        ]
+        result, calls = self.run_script(script, max_cost_rub=1.0)
+        self.assertEqual(1, len(calls))
+        self.assertFalse(result["usage"]["cost_reported"])
+        self.assertIsNone(result["usage"]["cost_rub"])
+        self.assertIn("не сообщил стоимость", result["stop_reason"])
+
     def test_iteration_budget_returns_partial_without_inventing_results(self):
         result, calls = self.run_script(self.base_script(), max_iterations=1)
         self.assertEqual(1, len(calls))

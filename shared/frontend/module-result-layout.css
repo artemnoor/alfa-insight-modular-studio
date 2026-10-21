@@ -1,0 +1,14 @@
+.module-result-comparison{overflow-x:auto;border:1px solid #e7ece9;border-radius:9px}
+.module-result-comparison-head,.module-result-comparison-row{display:grid;grid-template-columns:minmax(150px,1.3fr) repeat(2,minmax(140px,1fr));gap:8px;align-items:center;min-width:560px;padding:10px 12px}
+.module-result-comparison-head{background:#f4f7f5;color:#68766e;font-size:10px;font-weight:700}
+.module-result-comparison-row{border-top:1px solid #edf0ee;color:#3e5146;font-size:11px}
+.module-result-comparison-row strong{font-size:11px;line-height:1.4}
+.module-result-comparison-row span{min-width:0;overflow-wrap:anywhere}
+.module-result-comparison-row small{display:block;margin-top:3px;color:#76837b;font-size:10px}
+.module-result-company-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.module-result-company{min-width:0;padding:12px;border:1px solid #e7ece9;border-radius:10px;background:#fafcfb}
+.module-result-company>h4{margin:0 0 10px;color:#34483d;font-size:13px}
+.module-result-company .module-result-card{padding:11px}
+.module-result-company .module-result-card p{margin-top:6px}
+.module-specific-result--business-intelligence .module-result-columns{align-items:start}
+@media(max-width:720px){.module-result-company-columns{grid-template-columns:1fr}}

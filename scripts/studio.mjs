@@ -24,7 +24,7 @@ function start(command, args, label) {
 process.once('SIGINT', () => stop(0))
 process.once('SIGTERM', () => stop(0))
 console.log(`Alfa Insight: http://127.0.0.1:5173${route}`)
-console.log('Fixture mode runs locally. External AI is disabled.')
+console.log('Fixture mode runs locally. External AI needs an explicit server opt-in and a manual mode selection.')
 start(python, ['drive_data_analysis_2026-10-20/react_api.py'], 'api')
 let apiReady = false
 for (let attempt = 0; attempt < 40 && !stopping; attempt += 1) {

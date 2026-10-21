@@ -644,6 +644,8 @@ def run_agent(
                        output_tokens: int = MAX_OUTPUT_TOKENS) -> tuple[bool, str]:
         if remaining() <= 1:
             return False, "Достигнут лимит времени."
+        if stats["model_calls"] > 0 and not stats["cost_known"]:
+            return False, "Провайдер не сообщил стоимость предыдущего вызова; дальнейшие обращения к модели остановлены."
         if stats["cost_rub"] >= max_cost_rub:
             return False, "Достигнут лимит стоимости."
         # Cyrillic JSON is denser in Python characters than the usual 4-char/token

@@ -1,4 +1,17 @@
 import { ModuleWorkbench, type ModuleSpec } from '../../../shared/frontend/ModuleWorkbench'
+import { ResultList, ResultMetrics, ResultSection, ResultTag, ResultTextList, asObject, resultText } from '../../../shared/frontend/ModuleResult'
+
+function renderResult(data: Record<string, any>) {
+  const analysis = asObject(data.analysis)
+  return <>
+    <ResultMetrics items={[{ label: 'Связь с компанией', value: analysis.relevance }, { label: 'Возможное влияние', value: analysis.impact }, { label: 'Уверенность', value: analysis.confidence }]} />
+    <ResultSection title="Событие"><article className="module-result-card"><h4>{resultText(analysis.what_happened, 'Содержание события не указано.')}</h4><p>{resultText(analysis.why_it_matters, 'Причинная связь не установлена.')}</p></article></ResultSection>
+    <ResultSection title="Что возможно и что проверить"><div className="module-result-columns"><div className="module-result-column"><h4>Возможные риски</h4><ResultTextList items={analysis.risks} empty="Подтверждённых рисков не указано." /><h4>Возможности</h4><ResultTextList items={analysis.opportunities} empty="Подтверждённых возможностей не указано." /></div><div className="module-result-column"><h4>Проверочные действия</h4><ResultTextList items={analysis.actions} /><h4>Не хватает данных</h4><ResultTextList items={analysis.missing_data} /></div></div></ResultSection>
+    <ResultSection title="Данные и предположения"><div className="module-result-columns"><div className="module-result-column"><h4>Факты профиля</h4><ResultList items={data.facts} empty="Факты профиля не переданы." renderItem={item => <p><ResultTag tone="good">Факт</ResultTag> {resultText(item.field)}: {resultText(item.value)}</p>} /></div><div className="module-result-column"><h4>Гипотезы</h4><ResultList items={data.hypotheses} empty="Отдельных гипотез нет." renderItem={item => <p><ResultTag tone="warn">Гипотеза</ResultTag> {resultText(item.statement)}</p>} /></div></div></ResultSection>
+    <ResultSection title="Ограничения проверки"><ResultTextList items={data.guardAdjustments} empty="Корректировок evidence guard нет." /></ResultSection>
+  </>
+}
+
 export const moduleSpec = {
   "id": "impact-analysis",
   "title": "Анализ влияния",
@@ -45,6 +58,7 @@ export const moduleSpec = {
       "path": "analysis.actions"
     }
   ],
+  renderResult,
   "localData": false,
   "productLink": false
 }

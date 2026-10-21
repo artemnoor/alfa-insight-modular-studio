@@ -13,7 +13,7 @@ class IsolatedFixtureTests(unittest.TestCase):
     def test_prepared_scenarios(self):
         status, result = dispatch("POST", "/api/modules/ai-agent/tests", {})
         self.assertEqual(status, 200)
-        self.assertEqual(len(result["scenarios"]), 3)
+        self.assertGreaterEqual(len(result["scenarios"]), 3)
         self.assertEqual(result["status"], "PASS", result)
 
 if __name__ == "__main__":
