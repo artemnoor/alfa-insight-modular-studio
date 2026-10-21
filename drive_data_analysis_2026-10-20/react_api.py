@@ -118,6 +118,15 @@ def _external_ai_enabled() -> bool:
         return False
 
 
+def _max_agent_cost_rub() -> float:
+    """Allow a lower per-run cap in test or demo environments; never exceed the agent ceiling."""
+    try:
+        configured = float(os.environ.get("ALFA_INSIGHT_MAX_COST_RUB", "5"))
+    except (TypeError, ValueError):
+        configured = 5.0
+    return max(0.05, min(configured, 5.0))
+
+
 def _safe_company_id(value: Any) -> str | None:
     company_id = str(value or "").strip()
     return company_id if _COMPANY_ID_RE.fullmatch(company_id) else None
@@ -543,6 +552,15 @@ def _create_job(*, kind: str, company_id: str, event_id: str, question: str = ""
     dedupe_key = f"{kind}:{mode}:{company_id}:{event_id}:{request_key or question.strip().casefold()}"
     now = datetime.now(timezone.utc).isoformat()
     with _jobs_lock:
+        # Idempotency keys protect network retries. The independent context lock
+        # protects against a second tab, refresh, or a newly generated requestId.
+        if kind == "research":
+            active = next((job for job in reversed(list(_jobs.values()))
+                           if job["kind"] == "research" and job["mode"] == mode
+                           and job["companyId"] == company_id and job["eventId"] == event_id
+                           and job["status"] in {"queued", "running"}), None)
+            if active is not None:
+                return _job_snapshot(active), False
         existing_id = _job_keys.get(dedupe_key)
         if existing_id and existing_id in _jobs:
             existing = _jobs[existing_id]
@@ -591,6 +609,7 @@ def _run_job(job_id: str) -> None:
                     structured_events=load_structured_events(),
                     progress_callback=lambda text, progress: _set_job(job_id, stage=text, progress=progress),
                     force_refresh=bool(job.get("forceRefresh")),
+                    max_cost_rub=_max_agent_cost_rub(),
                 )
                 result = {**result, "mode": "external"}
                 if not result.get("tool_history"):

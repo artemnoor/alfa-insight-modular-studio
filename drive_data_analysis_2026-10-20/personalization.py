@@ -530,6 +530,20 @@ def _profile_signals(profile: dict[str, Any], event: dict[str, Any], network: di
         field for field, terms in BANK_PRODUCT_EVENT_TERMS.items()
         if _flag(profile.get(field)) and any(_contains(product_text, phrase) for phrase in terms)
     ]
+    # The CBR maximum-rate series in this archive is explicitly about deposits
+    # of individuals. A corporate deposit flag does not establish that a legal
+    # entity is covered by that statistic or that it has an active deposit.
+    individual_deposit_series = (
+        any(_contains(product_text, phrase) for phrase in (
+            "депозитов физических лиц", "вкладов физических лиц", "вклады физических лиц",
+            "депозитов физлиц", "вкладов физлиц", "депозиты физических лиц",
+        ))
+        or (_contains(product_text, "физических лиц") and any(
+            _contains(product_text, phrase) for phrase in ("ставк", "вклад", "депозит")
+        ))
+    )
+    if individual_deposit_series:
+        matching_products = [field for field in matching_products if field != "CL_PRODUCT_DEP_MARK"]
     for field in matching_products:
         label = product_labels[field]
         signals.append({

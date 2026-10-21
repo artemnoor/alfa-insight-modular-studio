@@ -210,6 +210,31 @@ class PersonalizationTests(unittest.TestCase):
         self.assertEqual(0, credit["relevance_score"])
         self.assertGreater(loan_credit["relevance_score"], credit["relevance_score"])
 
+    def test_individual_deposit_rate_series_does_not_match_corporate_deposit_flag(self) -> None:
+        company = {
+            **self.profile,
+            "SYNTHETIC_U": "U_FUEL",
+            "MAINOKVED_CODE": "46.71",
+            "MAINOKVED_NAME": "Торговля оптовая топливом",
+            "CL_PRODUCT_LOA_MARK": "0.0",
+            "CL_PRODUCT_DEP_MARK": "1.0",
+            "CL_PRODUCT_GAR_MARK": "0.0",
+        }
+        event = {
+            **self.event,
+            "title": "Результаты мониторинга ставок по вкладам физических лиц",
+            "summary": "Средняя максимальная ставка в десяти крупнейших банках.",
+            "content": "Результаты мониторинга максимальных процентных ставок по вкладам физических лиц.",
+            "confirmed_facts": [],
+            "classifications": {"topics": [], "genres": [], "sentivent_events": [], "events": [], "entities": []},
+        }
+
+        result = stage6.score_event(company, event, today=self.today)
+
+        self.assertNotIn("bank_product", {reason["signal"] for reason in result["reasons"]})
+        self.assertEqual(0, result["relevance_score"])
+        self.assertEqual("no_confirmed_match", result["status"])
+
     def test_credit_institution_mentions_do_not_match_a_company_loan_flag(self) -> None:
         profile = {
             **self.profile,

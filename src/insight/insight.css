@@ -200,6 +200,8 @@ a:hover { color: #7e1520; }
 .insight-research-result p { margin: 0; color: #454950; font-size: 11px; line-height: 1.55; }
 .insight-research-result > div > strong { font-size: 11px; }
 .insight-research-result ul { display: grid; gap: 5px; margin: 6px 0 0; padding-inline-start: 17px; color: #50555b; font-size: 11px; line-height: 1.5; }
+.insight-research-result li > small { display: block; margin-block-start: 4px; color: #737880; font-size: 10px; line-height: 1.45; }
+.insight-research-result li > small a { color: #245b9b; text-decoration: underline; text-underline-offset: 2px; }
 .insight-research-tools, .insight-research-citations { display: grid; gap: 6px; }
 .insight-research-tools span, .insight-research-citations a, .insight-research-citations span { color: #555a61; font-size: 10px; line-height: 1.45; }
 .insight-research-citations a { display: block; }
@@ -211,7 +213,8 @@ a:hover { color: #7e1520; }
 .insight-history-item { padding-block: 10px; border-block-end: 1px solid #eceef0; }
 .insight-history-item strong, .insight-history-item span { display: inline-block; font-size: 10px; }
 .insight-history-item span { margin-inline-start: 8px; color: #777c83; }
-.insight-history-item p { margin-block-start: 5px; }
+.insight-history-item p { margin-block: 5px; }
+.insight-history-item > small { display: block; margin-block: 8px; color: #737880; font-size: 10px; }
 .insight-history-item button, .insight-history-last { min-height: 36px; padding: 0 10px; border: 1px solid #dfe1e4; border-radius: 7px; background: #fff; color: #444950; font-size: 10px; font-weight: 600; cursor: pointer; }
 .insight-history-item button:hover, .insight-history-last:hover { background: #f5f6f7; }
 .insight-history-last { margin-block-start: 12px; }

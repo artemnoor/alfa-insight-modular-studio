@@ -192,6 +192,131 @@ class AgentOrchestratorTests(unittest.TestCase):
                               if step.get("kind") == "tool_call" and step.get("tool") == "get_network_context")
         self.assertNotIn("F_PRIVATE", json.dumps(network_result))
 
+    def test_event_profile_policy_skips_irrelevant_tools_and_keeps_uncertainty_actionable(self):
+        profile = {
+            **self.profile,
+            "CL_PRODUCT_LOA_MARK": "0.0",
+            "CL_PRODUCT_DEP_MARK": "1.0",
+            "CL_PRODUCT_GAR_MARK": "0.0",
+            "MAINOKVED_CODE": "46.71",
+            "MAINOKVED_NAME": "Торговля оптовая топливом",
+        }
+        event = {
+            **self.event,
+            "title": "Результаты мониторинга максимальных процентных ставок по вкладам физических лиц",
+            "summary": "Средняя максимальная ставка в десяти крупнейших банках.",
+            "content": "Результаты мониторинга максимальных процентных ставок по вкладам физических лиц.",
+            "confirmed_facts": [],
+        }
+        optional_tools = ("get_network_context", "search_related_news", "search_bank_research")
+        script = [
+            envelope(calls=[call_tool("submit_research_plan", plan(*optional_tools))]),
+            envelope(calls=[call_tool("get_company_profile", {}), call_tool("get_event_facts", {}, "c2")]),
+            envelope(content=final_result()),
+        ]
+        rag_queries = []
+        result, _ = self.run_script(
+            script, profile=profile, event=event,
+            rag_search=lambda query, text, top_k=3: rag_queries.append(query) or {"matches": []},
+        )
+
+        skipped = {item["tool"]: item["reason"] for item in result["plan_steps"]
+                   if item["status"] == "skipped" and item["tool"] in optional_tools}
+        self.assertEqual(set(optional_tools), set(skipped))
+        self.assertIn("физических лиц", skipped["search_bank_research"])
+        self.assertEqual([], rag_queries)
+        self.assertTrue(any("Публикация относится к вкладам физических лиц" in step for step in result["next_steps"]))
+        self.assertTrue(any("корпоративный депозит" in item for item in result["analysis"]["missing_data"]))
+        self.assertIn("физических лиц", result["analysis"]["why_it_matters"])
+
+    def test_bank_rag_discards_generic_financial_documents(self):
+        event = {
+            **self.event,
+            "title": "Банки смогут экономить капитал при кредитовании проектов по защите объектов критической инфраструктуры",
+            "content": "Понижающие коэффициенты по ссудам на финансирование проектов защиты критической инфраструктуры составят 30% и 50%.",
+            "summary": "Коэффициенты установлены до 31.12.2026.",
+        }
+        script = [
+            envelope(calls=[call_tool("submit_research_plan", plan("search_bank_research"))]),
+            envelope(calls=[
+                call_tool("get_company_profile", {}),
+                call_tool("get_event_facts", {}, "c2"),
+                call_tool("search_bank_research", {"query": "кредитование инфраструктурных проектов", "limit": 3}, "c3"),
+            ]),
+            envelope(content=final_result()),
+        ]
+        rag_calls = []
+        result, _ = self.run_script(
+            script, event=event,
+            rag_search=lambda query, text, top_k=3: rag_calls.append(query) or {"matches": [{
+                "chunk_id": "irrelevant-market-note", "doc_title": "Долговой рынок: тактический взгляд",
+                "text": "Аналитики ожидают изменения ставок на рынке облигаций и оценивают размещения эмитентов.",
+                "page_number": 3,
+            }]},
+            research_question="Проверь материалы аналитиков Альфа-Банка по этому событию.",
+        )
+
+        self.assertEqual(["кредитование инфраструктурных проектов"], rag_calls)
+        result_call = next(item for item in result["tool_trace"]
+                           if item.get("kind") == "tool_call" and item.get("tool") == "search_bank_research")
+        self.assertEqual("no_relevant_material", result_call["result"]["status"])
+        self.assertEqual([], result_call["result"]["results"])
+        self.assertEqual(1, result_call["result"]["rejected_candidates"])
+        self.assertFalse(any(source["kind"] == "bank_pdf" for source in result["analysis"]["sources"]))
+
+    def test_only_relevant_company_profile_fields_are_sent_to_the_agent(self):
+        profile = {**self.profile, "UNRELATED_PRIVATE_FIELD": "must not leave the server"}
+        result, calls = self.run_script(self.base_script(), profile=profile)
+        profile_message = next(message for message in calls[2]["messages"]
+                               if message.get("role") == "tool" and message.get("tool_call_id") == "c1")
+        self.assertNotIn("UNRELATED_PRIVATE_FIELD", profile_message["content"])
+        self.assertFalse(any("UNRELATED_PRIVATE_FIELD" in source["source_id"]
+                             for source in result["analysis"]["sources"]))
+
+    def test_compact_tool_context_leaves_budget_for_a_final_answer(self):
+        noisy_profile = {
+            **self.profile,
+            **{f"UNRELATED_FIELD_{index}": "x" * 500 for index in range(80)},
+        }
+        script = self.base_script()
+        script[0]["usage"]["prompt_tokens"] = 6000
+        script[1]["usage"]["prompt_tokens"] = 6000
+        result, calls = self.run_script(
+            script, profile=noisy_profile, max_iterations=2, max_total_tokens=24000,
+        )
+        self.assertTrue(any(step.get("status") == "finalization" for step in result["tool_trace"]))
+        self.assertEqual("unclear", result["status"])
+        self.assertIn("MAINOKVED_NAME", calls[-1]["messages"][-1]["content"])
+
+    def test_compound_borrower_scope_claim_fails_deterministic_check_before_semantic_verifier(self):
+        quote = "Понижающие коэффициенты установлены в размере: 30% и 50% для разных заемщиков."
+        event = {
+            **self.event,
+            "content": quote,
+            "articles": [{**self.event["articles"][0], "content": quote}],
+            "confirmed_facts": [{"label": "Коэффициенты", "value": "30% и 50%", "quote": quote,
+                                 "article_title": self.event["title"], "source": "Банк России", "url": self.event["url"],
+                                 "semantic_status": "supported"}],
+        }
+        final = final_result(findings=[{
+            "claim_id": "compound", "claim": "Коэффициент 30% применяется к заёмщикам инвестиционного класса, а 50% — к иным заёмщикам.",
+            "kind": "fact", "evidence": [{"source_id": "news:N1", "quote": quote}],
+        }])
+        result, _ = self.run_script(
+            [
+                envelope(calls=[call_tool("submit_research_plan", plan())]),
+                envelope(calls=[call_tool("get_company_profile", {}), call_tool("get_event_facts", {}, "c2")]),
+                envelope(content=final),
+            ],
+            event=event,
+            verifier_status="supports",
+        )
+
+        self.assertEqual([], result["analysis"]["findings"])
+        self.assertEqual(0, result["analysis"]["verification_summary"]["findings"])
+        self.assertFalse(any(item.get("tool") == "verify_evidence" and item.get("kind") == "tool_call"
+                             for item in result["tool_trace"]))
+
     def test_agent_revises_plan_after_new_evidence_and_unlocks_a_new_tool(self):
         revised = plan("get_network_context", "get_event_facts", "revise_research_plan")
         script = [
@@ -206,7 +331,10 @@ class AgentOrchestratorTests(unittest.TestCase):
             ]),
             envelope(content=final_result()),
         ]
-        result, _ = self.run_script(script, network={"payment_metrics": {"incoming_counterparties": 2}})
+        result, _ = self.run_script(
+            script, network={"payment_metrics": {"incoming_counterparties": 2}},
+            research_question="Проверь связи и контрагентов по платежам компании.",
+        )
         self.assertEqual(2, len(result["analysis"]["plan_history"]))
         self.assertIn("get_network_context", result["analysis"]["plan"]["selected_tools"])
         network_step = next(step for step in result["tool_trace"]
@@ -262,7 +390,10 @@ class AgentOrchestratorTests(unittest.TestCase):
             ]),
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
-        result, _ = self.run_script(script, rag_search=broken_rag)
+        result, _ = self.run_script(
+            script, rag_search=broken_rag,
+            research_question="Проверь материалы аналитиков Альфа-Банка о кредитовании компаний.",
+        )
         failure = next(step for step in result["tool_trace"]
                        if step.get("kind") == "tool_call" and step.get("tool") == "search_bank_research")
         self.assertEqual("unavailable", failure["status"])
@@ -320,7 +451,7 @@ class AgentOrchestratorTests(unittest.TestCase):
 
     def test_supported_quote_is_kept_with_source_provenance(self):
         script = self.base_script(final=final_result(findings=[fact_claim()]))
-        result, _ = self.run_script(script)
+        result, _ = self.run_script(script, research_question="Сравни независимые источники по условиям кредитования.")
         finding = result["analysis"]["findings"][0]
         self.assertEqual("supports", finding["verification"])
         self.assertEqual("news:N1", finding["sources"][0]["source_id"])
@@ -332,13 +463,46 @@ class AgentOrchestratorTests(unittest.TestCase):
             what_happened="Не подтверждённое моделью описание.",
             why_it_matters="У компании точно есть экспозиция.",
         ))
-        result, _ = self.run_script(script)
+        result, _ = self.run_script(script, research_question="Проверь другие публикации об этом событии.")
         analysis = result["analysis"]
         self.assertEqual("Персональное влияние новости на выбранную компанию не подтверждено доступными данными.",
                          analysis["summary"])
         self.assertEqual(self.event["title"], analysis["what_happened"])
-        self.assertEqual("Связь новости с выбранной компанией не подтверждена доступными данными.",
-                         analysis["why_it_matters"])
+        self.assertIn("Фактическая связь с компанией не подтверждена", analysis["why_it_matters"])
+        self.assertNotIn("точно", analysis["why_it_matters"])
+
+    def test_grounded_event_summary_uses_verified_details_from_nested_full_article(self):
+        quote = "Понижающие коэффициенты составят 30% и 50% для двух категорий заемщиков."
+        event = {
+            **self.event,
+            "content": "Краткая выдержка о решении регулятора.",
+            "articles": [{**self.event["articles"][0], "content": f"Полный текст. {quote}"}],
+            "confirmed_facts": [{"label": "Коэффициенты", "quote": quote}],
+        }
+        result, _ = self.run_script(self.base_script(), event=event)
+        self.assertIn(quote, result["analysis"]["what_happened"])
+
+    def test_grounded_event_summary_prioritizes_rates_over_secondary_period_facts(self):
+        period = "до 90 дней – 12,55%"
+        rate = "I декада октября – 13,06%."
+        article_text = f"Показатель за период: {rate} Сроки: {period}."
+        event = {
+            **self.event,
+            "content": "Краткая выдержка о мониторинге ставок.",
+            "articles": [{**self.event["articles"][0], "content": article_text}],
+            "confirmed_facts": [
+                {"label": "Срок вклада", "quote": period},
+                {"label": "Средняя ставка", "quote": rate},
+            ],
+        }
+        result, _ = self.run_script(self.base_script(), event=event)
+        summary = result["analysis"]["what_happened"]
+        self.assertLess(summary.index(rate), summary.index(period))
+
+    def test_agent_sources_only_include_cited_profile_fields_and_primary_article(self):
+        result, _ = self.run_script(self.base_script(final=final_result(findings=[fact_claim()])))
+        source_ids = {source["source_id"] for source in result["analysis"]["sources"]}
+        self.assertEqual({"news:N1"}, source_ids)
 
     def test_conflicting_sources_are_visible_and_force_unclear_impact(self):
         related_claim = {"claim_id": "conflict-1", "claim": "Источники расходятся в описании условий кредитования.",
@@ -357,7 +521,7 @@ class AgentOrchestratorTests(unittest.TestCase):
                 findings=[fact_claim()],
             )),
         ]
-        result, _ = self.run_script(script)
+        result, _ = self.run_script(script, research_question="Сравни независимые источники по событию.")
         self.assertEqual(1, len(result["analysis"]["contradictions"]))
         self.assertEqual("unclear", result["analysis"]["impact"])
         self.assertEqual("low", result["analysis"]["confidence"])
@@ -372,7 +536,7 @@ class AgentOrchestratorTests(unittest.TestCase):
             ]),
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
-        result, _ = self.run_script(script)
+        result, _ = self.run_script(script, research_question="Проверь другие публикации по этому событию.")
         step = next(step for step in result["tool_trace"]
                     if step.get("kind") == "tool_call" and step.get("tool") == "search_related_news")
         self.assertEqual("локальный архив T08/T09", step["result"]["search_scope"])
@@ -390,7 +554,10 @@ class AgentOrchestratorTests(unittest.TestCase):
             ]),
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
-        result, _ = self.run_script(script, rag_search=broken)
+        result, _ = self.run_script(
+            script, rag_search=broken,
+            research_question="Проверь материалы аналитиков Альфа-Банка о кредитовании компаний.",
+        )
         rag = next(step for step in result["tool_trace"]
                    if step.get("kind") == "tool_call" and step.get("tool") == "search_bank_research")
         profile = next(step for step in result["tool_trace"]
@@ -426,7 +593,10 @@ class AgentOrchestratorTests(unittest.TestCase):
             "chunk_id": "bank-1", "doc_title": "Ставки и кредитование", "text": "Материал о кредитовании компаний.",
             "source_url": "https://example.test/bank", "page_number": 4,
         }]}
-        result, calls = self.run_script(script, rag_search=rag_search)
+        result, calls = self.run_script(
+            script, rag_search=rag_search,
+            research_question="Проверь банковские материалы об условиях кредитования компаний.",
+        )
         planned_search = next(step for step in result["tool_trace"]
                               if step.get("tool") == "search_bank_research" and step.get("origin") == "plan_completion_guard")
         self.assertEqual("ok", planned_search["status"])
@@ -450,7 +620,10 @@ class AgentOrchestratorTests(unittest.TestCase):
             })]),
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
-        result, _ = self.run_script(script, rag_search=lambda query, *args, **kwargs: rag_queries.append(query))
+        result, _ = self.run_script(
+            script, rag_search=lambda query, *args, **kwargs: rag_queries.append(query),
+            research_question="Проверь материалы аналитиков Альфа-Банка о кредитовании.",
+        )
         bank_step = next(step for step in result["plan_steps"] if step["tool"] == "search_bank_research")
         self.assertEqual("skipped", bank_step["status"])
         self.assertIn("Нет подтверждённого кредитного продукта", bank_step["reason"])
@@ -468,7 +641,7 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
-        result, _ = self.run_script(script)
+        result, _ = self.run_script(script, research_question="Проверь контрагентов и платежные связи компании.")
         network_step = next(step for step in result["plan_steps"] if step["tool"] == "get_network_context")
         self.assertEqual("unavailable", network_step["status"])
         self.assertIn("бизнес-графа недоступен", network_step["reason"])
@@ -486,7 +659,9 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
-        result, _ = self.run_script(script)
+        result, _ = self.run_script(
+            script, research_question="Проверь материалы аналитиков Альфа-Банка и другие публикации по кредитованию компаний."
+        )
         statuses = {step["tool"]: step["status"] for step in result["plan_steps"]}
         self.assertEqual("failed", statuses["search_bank_research"])
         self.assertEqual("completed", statuses["search_related_news"])
@@ -535,8 +710,10 @@ class AgentOrchestratorTests(unittest.TestCase):
             ]),
             envelope(content=final_result()),
         ]
-        result, _ = self.run_script(script)
-        self.assertEqual(["get_company_profile", "get_event_facts", "search_bank_research"],
+        result, _ = self.run_script(
+            script, research_question="Проверь материалы аналитиков Альфа-Банка о кредитовании компаний."
+        )
+        self.assertEqual(["get_company_profile", "get_event_facts", "verify_evidence", "search_bank_research"],
                          result["analysis"]["plan"]["selected_tools"])
         bank_search = next(step for step in result["tool_trace"]
                            if step.get("kind") == "tool_call" and step.get("tool") == "search_bank_research")
@@ -560,7 +737,10 @@ class AgentOrchestratorTests(unittest.TestCase):
             envelope(calls=[call_tool("search_bank_research", {"query": "кредитование", "limit": 2})]),
             envelope(content=final_result(status="unclear", relevance="unclear", impact="unclear", confidence="low")),
         ]
-        result, _ = self.run_script(script, rag_search=rag_search)
+        result, _ = self.run_script(
+            script, rag_search=rag_search,
+            research_question="Проверь материалы аналитиков Альфа-Банка о кредитовании компаний.",
+        )
         searches = [step for step in result["tool_trace"]
                     if step.get("kind") == "tool_call" and step.get("tool") == "search_bank_research"]
         self.assertEqual(["кредитование"], calls_to_search)

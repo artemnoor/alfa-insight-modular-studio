@@ -17,6 +17,7 @@ export type SourceLink = {
   title: string
   source: string
   url: string
+  field?: string
   page?: number | null
   publishedAt?: string | null
   contentStatus?: string
@@ -139,6 +140,22 @@ export type ResearchResult = {
   plan_status?: string
   plan_history?: unknown[]
   tool_trace?: unknown[]
+  stop_reason?: string
+  started_at?: string
+  completed_at?: string
+  companyId?: string
+  eventId?: string
+  cost_rub?: number | null
+}
+
+export type ResearchHistoryItem = ResearchResult & {
+  runId?: string
+  completedAt?: string
+  startedAt?: string
+  companyId?: string
+  eventId?: string
+  status: string
+  cost_rub?: number | null
 }
 
 export type Job = {
@@ -161,6 +178,6 @@ export type Job = {
 }
 
 export type HistoryResponse = {
-  research: (ResearchResult & { runId?: string; completedAt?: string; status: string })[]
+  research: ResearchHistoryItem[]
   messages: ChatMessage[]
 }

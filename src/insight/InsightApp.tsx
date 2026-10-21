@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { api } from './api'
-import type { BankResearch, ChatMessage, CompanyCard, FeedEvent, Job, ResearchResult, Workspace } from './types'
+import type { BankResearch, ChatMessage, CompanyCard, FeedEvent, Job, ResearchHistoryItem, ResearchResult, SourceLink, Workspace } from './types'
 import './insight.css'
 
-const DEFAULT_COMPANY = 'U_DEMO_1'
+const DEFAULT_COMPANY = ''
 
 function initialSelection() {
   const params = new URLSearchParams(window.location.search)
@@ -22,6 +22,31 @@ function formatDate(value?: string | null) {
   return Number.isNaN(date.getTime())
     ? value
     : new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(date)
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return 'Время не указано'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
+}
+
+function researchSourceLabel(citation: SourceLink) {
+  if (citation.kind === 'company_profile') {
+    const fieldLabels: Record<string, string> = {
+      MAINOKVED_NAME: 'Основной вид деятельности', MAINOKVED_CODE: 'Код вида деятельности',
+      CL_PRODUCT_LOA_MARK: 'Признак кредитного продукта', CL_PRODUCT_GAR_MARK: 'Признак банковской гарантии',
+      CL_PRODUCT_DEP_MARK: 'Признак депозитного продукта', REGION: 'Регион', CITY: 'Город',
+      REVENUE_COMPANY: 'Категория выручки',
+    }
+    const field = citation.field || citation.title.split(' · ').at(-1) || ''
+    return { label: 'Профиль компании', title: fieldLabels[field] || 'Данные профиля' }
+  }
+  if (citation.kind === 'news_article') return { label: 'Публикация', title: citation.title || 'Первоисточник' }
+  if (citation.kind === 'confirmed_t08_fact') return { label: 'Факт из публикации', title: citation.title || 'Подтверждённый факт' }
+  if (citation.kind === 'bank_pdf') return { label: 'Материал Альфа-Банка', title: citation.title || 'Банковская аналитика' }
+  return { label: citation.source || 'Источник', title: citation.title || 'Материал' }
 }
 
 function priorityLabel(event: FeedEvent) {
@@ -75,13 +100,14 @@ export default function InsightApp() {
   const [companySearchBusy, setCompanySearchBusy] = useState(false)
   const [eventSearch, setEventSearch] = useState('')
   const [bankResearch, setBankResearch] = useState<BankResearch | null>(null)
-  const [history, setHistory] = useState<{ research: (ResearchResult & { runId?: string; completedAt?: string; status: string })[]; messages: ChatMessage[] }>({ research: [], messages: [] })
+  const [history, setHistory] = useState<{ research: ResearchHistoryItem[]; messages: ChatMessage[] }>({ research: [], messages: [] })
   const [historyBusy, setHistoryBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [chatQuestion, setChatQuestion] = useState('')
   const [job, setJob] = useState<Job | null>(null)
   const [researchResult, setResearchResult] = useState<ResearchResult | null>(null)
+  const [historicalResult, setHistoricalResult] = useState(false)
   const [researchStarting, setResearchStarting] = useState(false)
   const [chatError, setChatError] = useState('')
   const companyInputRef = useRef<HTMLInputElement>(null)
@@ -105,12 +131,20 @@ export default function InsightApp() {
   }, [])
 
   useEffect(() => {
+    if (!activeCompany) {
+      setWorkspace(null)
+      setWorkspaceError('')
+      setLoadingWorkspace(false)
+      return
+    }
     const controller = new AbortController()
     setLoadingWorkspace(true)
     setWorkspaceError('')
     setBankResearch(null)
     setResearchResult(null)
+    setHistoricalResult(false)
     setJob(null)
+    setHistory({ research: [], messages: [] })
     setMessages([])
     api.workspace(activeCompany, controller.signal)
       .then((data) => {
@@ -160,6 +194,10 @@ export default function InsightApp() {
     const controller = new AbortController()
     setBankResearch(null)
     setHistoryBusy(true)
+    setHistory({ research: [], messages: [] })
+    setMessages([])
+    setResearchResult(null)
+    setHistoricalResult(false)
     api.event(activeCompany, selectedEvent.id, controller.signal)
       .then((details) => setBankResearch(details.bankResearch))
       .catch(() => { if (!controller.signal.aborted) setBankResearch({ status: 'unavailable', matches: [] }) })
@@ -167,7 +205,6 @@ export default function InsightApp() {
       .then((data) => {
         setHistory(data)
         setMessages(data.messages)
-        if (!researchResult && data.research[0]?.mode) setResearchResult(data.research[0])
       })
       .catch(() => { if (!controller.signal.aborted) setHistory({ research: [], messages: [] }) })
       .finally(() => { if (!controller.signal.aborted) setHistoryBusy(false) })
@@ -183,7 +220,10 @@ export default function InsightApp() {
           if (stopped) return
           setJob(next)
           if (next.status === 'complete') {
-            if (next.kind === 'research' && next.result) setResearchResult(next.result as ResearchResult)
+            if (next.kind === 'research' && next.result) {
+              setResearchResult(next.result as ResearchResult)
+              setHistoricalResult(false)
+            }
             if (next.kind === 'chat' && next.result && 'messages' in next.result && Array.isArray(next.result.messages)) {
               setMessages(next.result.messages as ChatMessage[])
             }
@@ -211,6 +251,11 @@ export default function InsightApp() {
     setCompanyPickerOpen(false)
     setCompanySearch('')
     setEventSearch('')
+    setHistory({ research: [], messages: [] })
+    setMessages([])
+    setResearchResult(null)
+    setHistoricalResult(false)
+    setJob(null)
     setLocation(company.id, '', true)
   }
 
@@ -220,6 +265,9 @@ export default function InsightApp() {
     setChatError('')
     setJob(null)
     setResearchResult(null)
+    setHistoricalResult(false)
+    setHistory({ research: [], messages: [] })
+    setMessages([])
   }
 
   const startResearch = async (forceRefresh = false) => {
@@ -233,7 +281,10 @@ export default function InsightApp() {
         requestId: crypto.randomUUID(),
       })
       setJob(started)
-      if (!started.created && started.status === 'complete' && started.result) setResearchResult(started.result as ResearchResult)
+      if (!started.created && started.status === 'complete' && started.result) {
+        setResearchResult(started.result as ResearchResult)
+        setHistoricalResult(true)
+      }
     } catch (error) {
       setChatError((error as Error).message)
     } finally {
@@ -242,7 +293,10 @@ export default function InsightApp() {
     }
   }
 
-  const showResearchResult = (result: ResearchResult) => setResearchResult(result)
+  const showResearchResult = (result: ResearchResult) => {
+    setResearchResult(result)
+    setHistoricalResult(true)
+  }
 
   const submitChat = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -297,8 +351,8 @@ export default function InsightApp() {
               aria-haspopup="listbox"
               onClick={() => setCompanyPickerOpen((open) => !open)}
             >
-              <span className="insight-company-id">{currentCompany?.id || activeCompany}</span>
-              <span className="insight-company-meta">{currentCompany ? `${currentCompany.industry} · ${currentCompany.region}` : 'Выбрать компанию'}</span>
+              <span className="insight-company-id">{currentCompany?.id || activeCompany || 'Не выбрана'}</span>
+              <span className="insight-company-meta">{currentCompany ? `${currentCompany.industry} · ${currentCompany.region}` : activeCompany ? 'Профиль компании не загружен' : 'Нажмите, чтобы выбрать компанию'}</span>
               <span className="insight-chevron" aria-hidden="true">⌄</span>
             </button>
             {companyPickerOpen && (
@@ -368,7 +422,11 @@ export default function InsightApp() {
             </div>
           )}
           {!loadingWorkspace && !workspaceError && visibleEvents.length === 0 && (
-            <div className="insight-empty-state"><strong>{workspace?.feed.length ? 'Ничего не найдено' : 'Для этой компании пока нет событий'}</strong><p>Попробуйте изменить запрос или выбрать другую компанию.</p></div>
+            <div className="insight-empty-state">
+              <strong>{!activeCompany ? 'Выберите компанию, чтобы открыть персональную ленту' : workspace?.feed.length ? 'Ничего не найдено' : 'Для этой компании пока нет событий'}</strong>
+              <p>{!activeCompany ? 'Лента и анализ будут учитывать профиль выбранной компании.' : 'Попробуйте изменить запрос или выбрать другую компанию.'}</p>
+              {!activeCompany && <button type="button" onClick={() => setCompanyPickerOpen(true)}>Выбрать компанию</button>}
+            </div>
           )}
           {!loadingWorkspace && !workspaceError && visibleEvents.length > 0 && (
             <div className="insight-event-list">
@@ -394,7 +452,8 @@ export default function InsightApp() {
         <section className="insight-analysis" aria-label="Анализ выбранного события">
           <button className="insight-mobile-back" type="button" onClick={() => setMobileDetail(false)}>← Вернуться к ленте</button>
           {loadingWorkspace && <div className="insight-detail-loading"><span className="insight-spinner" /> Загружаю анализ…</div>}
-          {!loadingWorkspace && workspaceError && <div className="insight-detail-loading">Выберите компанию, чтобы увидеть события и анализ.</div>}
+          {!loadingWorkspace && workspaceError && <div className="insight-detail-loading">Не удалось загрузить данные компании: {workspaceError}</div>}
+          {!loadingWorkspace && !workspaceError && !activeCompany && <div className="insight-detail-loading">Выберите компанию, чтобы увидеть персональные события и анализ.</div>}
           {!loadingWorkspace && !workspaceError && selectedEvent && workspace && (
             <EventAnalysis
               workspace={workspace}
@@ -410,6 +469,7 @@ export default function InsightApp() {
               job={job}
               activeJob={activeJob}
               researchResult={researchResult}
+              historicalResult={historicalResult}
               history={history}
               historyBusy={historyBusy}
               historyOpen={historyOpen}
@@ -439,7 +499,8 @@ type EventAnalysisProps = {
   job: Job | null
   activeJob: Job | null
   researchResult: ResearchResult | null
-  history: { research: (ResearchResult & { runId?: string; completedAt?: string; status: string })[]; messages: ChatMessage[] }
+  historicalResult: boolean
+  history: { research: ResearchHistoryItem[]; messages: ChatMessage[] }
   historyBusy: boolean
   historyOpen: boolean
   onHistoryToggle: (event: React.SyntheticEvent<HTMLDetailsElement>) => void
@@ -448,7 +509,7 @@ type EventAnalysisProps = {
 }
 
 function EventAnalysis(props: EventAnalysisProps) {
-  const { workspace, event, bankResearch, messages, chatQuestion, setChatQuestion, onChatSubmit, onResearch, onShowResult, researchStarting, job, activeJob, researchResult, history, historyBusy, onHistoryToggle, chatError, localDemo } = props
+  const { workspace, event, bankResearch, messages, chatQuestion, setChatQuestion, onChatSubmit, onResearch, onShowResult, researchStarting, job, activeJob, researchResult, historicalResult, history, historyBusy, onHistoryToggle, chatError, localDemo } = props
   const suggestedActions = Array.from(new Set(event.chains.map((chain) => chain.action).filter(Boolean))).slice(0, 3)
 
   return (
@@ -595,6 +656,9 @@ function EventAnalysis(props: EventAnalysisProps) {
         activeJob={activeJob?.kind === 'research' ? activeJob : null}
         result={researchResult}
         history={history.research}
+        companyId={workspace.company.id}
+        eventTitle={event.title}
+        historicalResult={historicalResult}
         busy={historyBusy}
         open={props.historyOpen}
         onHistoryToggle={onHistoryToggle}
@@ -651,33 +715,52 @@ type ResearchPanelProps = {
   job: Job | null
   activeJob: Job | null
   result: ResearchResult | null
-  history: (ResearchResult & { runId?: string; completedAt?: string; status: string })[]
+  history: ResearchHistoryItem[]
   busy: boolean
   open: boolean
+  companyId: string
+  eventTitle: string
+  historicalResult: boolean
   onHistoryToggle: (event: React.SyntheticEvent<HTMLDetailsElement>) => void
   onResearch: (forceRefresh: boolean) => void
   onShowResult: (result: ResearchResult) => void
   researchStarting: boolean
 }
 
-function ResearchPanel({ localDemo, job, activeJob, result, history, busy, open, onHistoryToggle, onResearch, onShowResult, researchStarting }: ResearchPanelProps) {
+function ResearchPanel({ localDemo, job, activeJob, result, history, busy, open, companyId, eventTitle, historicalResult, onHistoryToggle, onResearch, onShowResult, researchStarting }: ResearchPanelProps) {
   const analysis = result?.analysis && typeof result.analysis === 'object' ? result.analysis : null
   const status = result?.status || (analysis?.status as string | undefined) || ''
-  const summary = result?.summary || (analysis?.summary as string | undefined) || (analysis?.why_it_matters as string | undefined)
+  const stopReason = result?.stop_reason || (analysis?.stop_reason as string | undefined) || ''
+  const partialMessage = status === 'partial'
+    ? /лимит токенов|лимит контекста/i.test(stopReason)
+      ? 'AI собрал доступные сведения, но не сформировал итог: достигнут лимит объёма контекста. Влияние на компанию не подтверждено.'
+      : /лимит стоимости/i.test(stopReason)
+        ? 'Исследование остановлено по установленному лимиту стоимости. Итог не сформирован полностью.'
+        : /лимит времени/i.test(stopReason)
+          ? 'Исследование остановлено по лимиту времени. Проверьте, какие шаги завершились, в плане ниже.'
+          : 'Исследование завершилось частично. Проверьте статусы шагов и ограничения ниже.'
+    : ''
+  const summary = result?.summary || (analysis?.summary as string | undefined)
+  const whatHappened = result?.what_happened || (analysis?.what_happened as string | undefined)
+  const whyItMatters = result?.why_it_matters || (analysis?.why_it_matters as string | undefined)
   const toolRows = result?.tool_history || []
   const citations = result?.citations || (Array.isArray(analysis?.sources) ? analysis.sources as ResearchResult['citations'] : []) || []
   const limitations = result?.limitations || (analysis?.missing_data as string[] | undefined) || []
+  const verifiedClaims = ['findings', 'risks', 'opportunities'].flatMap((field) => {
+    const entries = analysis?.[field]
+    return Array.isArray(entries) ? entries.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null && typeof (item as Record<string, unknown>).claim === 'string') : []
+  })
   const canShowProgress = !!activeJob
 
   return (
     <section className="insight-research" aria-labelledby="insight-research-title">
       <div className="insight-research-head">
-        <div><p className="insight-eyebrow">Дополнительная проверка</p><h3 id="insight-research-title">Исследовать глубже</h3><p>Сверить событие с профилем, связями и материалами банка.</p></div>
-        <button className="insight-research-button" type="button" onClick={() => onResearch(!!result)} disabled={canShowProgress || researchStarting}>
-          {canShowProgress || researchStarting ? 'Идёт исследование…' : result ? 'Исследовать заново' : 'Начать исследование'}
+            <div><p className="insight-eyebrow">Дополнительная проверка</p><h3 id="insight-research-title">Глубокий AI-анализ</h3><p>Проверить событие по профилю компании и доступным источникам.</p></div>
+        <button className="insight-research-button" type="button" onClick={() => onResearch(!!result || history.length > 0)} disabled={canShowProgress || researchStarting}>
+          {canShowProgress || researchStarting ? 'Идёт исследование…' : result || history.length > 0 ? 'Исследовать заново' : 'Начать исследование'}
         </button>
       </div>
-      {localDemo && <p className="insight-research-mode">Сейчас работает локальная проверка без отправки данных внешней модели. Результат будет помечен как демонстрационный.</p>}
+      {localDemo && <p className="insight-research-mode">Новый запуск пройдёт локально: данные компании не отправляются внешней модели. Результат будет помечен как демонстрационный.</p>}
       {canShowProgress && (
         <div className="insight-progress" role="status" aria-live="polite">
           <div className="insight-progress-copy"><span className="insight-spinner" /><div><strong>{activeJob.stage}</strong><span>{Math.round(activeJob.progress * 100)}% · исследование выполняется</span></div></div>
@@ -687,29 +770,65 @@ function ResearchPanel({ localDemo, job, activeJob, result, history, busy, open,
       {job?.status === 'error' && <p className="insight-research-error" role="alert">{job.error}</p>}
       {result && (
         <div className="insight-research-result">
-          <div className="insight-result-status"><strong>{result.mode === 'local_demo' ? 'Локальная проверка завершена' : 'Исследование AI завершено'}</strong><span>{status === 'complete' ? 'Данные собраны' : status === 'partial' ? 'Часть данных недоступна' : 'Влияние не установлено'}</span></div>
+          <div className="insight-result-status"><strong>{historicalResult ? 'Сохранённое исследование' : result.mode === 'local_demo' ? 'Локальная проверка завершена' : 'Исследование AI завершено'}</strong><span>{status === 'complete' ? 'Проверки завершены' : status === 'partial' ? 'Завершено частично' : 'Влияние не установлено'} · {result.mode === 'local_demo' ? 'локальный режим' : 'внешняя модель'}</span></div>
+          {partialMessage && <p className="insight-disclaimer" role="status">{partialMessage}</p>}
+          {whatHappened && <div><strong>Что произошло</strong><p>{whatHappened}</p></div>}
+          {whyItMatters && <div><strong>Почему это может касаться компании</strong><p>{whyItMatters}</p></div>}
+          <div><strong>Что может произойти</strong>{verifiedClaims.length > 0
+            ? <ul>{verifiedClaims.slice(0, 4).map((item, index) => <li key={`${String(item.claim_id || item.claim)}-${index}`}>
+              <span>{String(item.claim)}</span>
+              {Array.isArray(item.sources) && item.sources.slice(0, 2).map((source, sourceIndex) => {
+                if (typeof source !== 'object' || source === null) return null
+                const evidence = source as Record<string, unknown>
+                return <small key={`${String(evidence.source_id || evidence.title)}-${sourceIndex}`}>
+                  {evidence.quote ? `«${String(evidence.quote)}» · ` : ''}{evidence.url
+                    ? <a href={String(evidence.url)} target="_blank" rel="noreferrer">{String(evidence.title || 'Источник')} ↗</a>
+                    : String(evidence.title || 'Источник')}
+                </small>
+              })}
+            </li>)}</ul>
+            : <p>Проверенных последствий для компании не установлено по доступным данным.</p>}
+          </div>
           {summary && <p>{summary}</p>}
           {result.impact === 'unclear' && <p className="insight-disclaimer">Фактическое влияние не подтверждено. Считайте эту проверку обзором источников и сигналов.</p>}
           {resultNextSteps(result, analysis).length > 0 && <div><strong>Что проверить</strong><ul>{resultNextSteps(result, analysis).slice(0, 3).map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}</ul></div>}
+          {!analysis && !result.summary && <p className="insight-disclaimer">Для этого старого запуска сохранились только метаданные; полный текст результата недоступен.</p>}
           {toolRows.length > 0 && <div className="insight-research-tools"><strong>Что проверено</strong>{toolRows.map((tool, index) => <span key={`${tool.tool}-${index}`}>{toolLabel(tool.tool)} · {toolStatusLabel(tool.status)}</span>)}</div>}
           {citations.length > 0 && <div className="insight-research-citations"><strong>Источники исследования</strong>{citations.slice(0, 6).map((citation, index) => {
-            const label = citation?.kind === 'bank_research_context' ? 'Общий контекст Альфа-Банка' : citation?.source || 'Источник'
+            const display = researchSourceLabel(citation)
+            const label = citation?.kind === 'bank_research_context' ? 'Общий контекст Альфа-Банка' : display.label
             return citation?.url
-              ? <a key={`${citation.url}-${index}`} href={citation.url} target="_blank" rel="noreferrer">{label}: {citation.title || 'Материал'}{citation.page ? ` · стр. ${citation.page}` : ''} ↗</a>
-              : <span key={`${citation?.title}-${index}`}>{label}: {citation?.title || 'Материал'}</span>
+              ? <a key={`${citation.url}-${index}`} href={citation.url} target="_blank" rel="noreferrer">{label}: {display.title}{citation.page ? ` · стр. ${citation.page}` : ''} ↗</a>
+              : <span key={`${citation?.title}-${index}`}>{label}: {display.title}</span>
           })}</div>}
           {limitations.length > 0 && <details className="insight-result-limitations"><summary>Ограничения и недостающие сведения</summary><ul>{limitations.slice(0, 6).map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></details>}
           {result.mode === 'external' && result.usage && <p className="insight-cost">Запросы: {result.usage.tool_calls ?? 0} · стоимость по данным API: {typeof result.usage.cost_rub === 'number' ? `${result.usage.cost_rub.toFixed(4)} ₽` : 'не указана'}</p>}
           {result.mode === 'external' && result.plan?.goal && <details className="insight-result-limitations"><summary>План исследования · {result.plan_status === 'complete' ? 'проверки выполнены' : 'частично выполнен'}</summary><p>{result.plan.goal}</p>{result.plan_steps?.length ? <ul>{result.plan_steps.map((step, index) => <li key={`${step.tool}-${index}`}>{toolLabel(step.tool)} — {toolStatusLabel(step.status)}{step.reason ? `: ${step.reason}` : ''}</li>)}</ul> : null}</details>}
         </div>
       )}
-      {history.length > 0 && <button className="insight-history-last" type="button" onClick={() => onShowResult(history[0])}>Показать последний результат</button>}
+      {history.length > 0 && <button className="insight-history-last" type="button" onClick={() => onShowResult(history[0])}>Посмотреть последнее исследование</button>}
       <details className="insight-disclosure insight-history" open={open} onToggle={onHistoryToggle}>
         <summary>История проверок <span>{history.length || (busy ? '…' : 'Пока нет')}</span></summary>
         <div className="insight-disclosure-body">
           {busy && <p>Загружаю историю…</p>}
           {!busy && history.length === 0 && <p>Для этого события сохранённых исследований пока нет.</p>}
-          {history.map((item, index) => <div className="insight-history-item" key={item.runId || item.run_id || `${item.mode}-${index}`}><strong>{item.mode === 'local_demo' ? 'Локальная проверка' : 'AI-исследование'}</strong><span>{item.completedAt ? formatDate(item.completedAt) : item.status} · {item.status}</span><p>{item.summary || (item.analysis?.summary as string | undefined) || 'Сохранены сведения о запуске; полный итог недоступен.'}</p><button type="button" onClick={() => onShowResult(item)}>Показать этот результат</button></div>)}
+          {history.map((item, index) => {
+            const completedAt = item.completedAt || item.completed_at
+            const cost = item.usage?.cost_rub ?? item.cost_rub
+            const hasSavedResult = !!item.analysis || !!item.summary || !!item.next_steps?.length
+            return <div className="insight-history-item" key={item.runId || item.run_id || `${item.mode}-${completedAt || index}`}>
+              <strong>{item.mode === 'local_demo' ? 'Локальная проверка' : 'AI-исследование'}</strong>
+              <span>{formatDateTime(completedAt)} · {item.status}</span>
+              <p>{item.companyId || item.company_id || companyId} · {eventTitle}</p>
+              {typeof cost === 'number'
+                ? <p>Стоимость: {cost.toFixed(4)} ₽</p>
+                : item.mode === 'external' && <p>Стоимость: не указана</p>}
+              <p>{item.summary || (item.analysis?.summary as string | undefined) || 'Сохранены сведения о запуске; полный итог недоступен.'}</p>
+              {hasSavedResult
+                ? <button type="button" onClick={() => onShowResult(item)}>Открыть это исследование</button>
+                : <small>Доступны только метаданные запуска</small>}
+            </div>
+          })}
         </div>
       </details>
     </section>
