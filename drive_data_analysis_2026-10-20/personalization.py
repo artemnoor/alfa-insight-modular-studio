@@ -16,7 +16,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parent
 ARCHIVE_DB_PATH = ROOT.parent / "data" / "news_pipeline.sqlite"
 CACHE_DB_PATH = ROOT.parent / "data" / "personalization_cache.sqlite3"
-RANKING_VERSION = "stage6-rules-v7"
+RANKING_VERSION = "stage6-rules-v8"
 ANALYSIS_CACHE_VERSION = "stage6-deep-analysis-v1"
 WEIGHTS = {
     "connection": 0.35,
@@ -94,17 +94,27 @@ FINANCIAL_EVENT_TERMS = (
     "ставк", "кредит", "заем", "займ", "финансирован", "банков", "капитал",
 )
 BANK_PRODUCT_EVENT_TERMS: dict[str, tuple[str, ...]] = {
-    # A profile flag only becomes a relevance signal when the article mentions
-    # the same product channel. A generic banking story must not match every
-    # company that has any bank product flag.
+    # Require a product mechanism, not a passing mention of a bank or a credit
+    # institution. Profile flags still do not prove an active contract.
     "CL_PRODUCT_LOA_MARK": (
-        "loan", "credit", "кредит", "заем", "займ", "кредитован", "финансирован",
+        "corporate loan", "business loan", "loan rate", "loan terms", "lending to companies",
+        "project loan", "project financing", "credit facility", "credit agreement",
+        "условия кредитования", "кредитование проектов", "кредитования проектов",
+        "кредитование предприятий", "кредитования предприятий",
+        "кредитование компаний", "кредитования компаний", "кредитный договор", "кредитный портфель",
+        "ставка по кредиту", "ставки по кредитам", "выдача кредитов предприятиям",
+        "проектное кредитование", "проектное финансирование", "кредитование заёмщиков",
     ),
     "CL_PRODUCT_DEP_MARK": (
-        "deposit", "депозит", "вклад", "сбережен",
+        "deposit rate", "deposit interest", "interest on deposits",
+        "депозитные ставки", "ставки по депозитам", "ставки по вкладам",
+        "процентные ставки по депозитам", "процентные ставки по вкладам",
+        "мониторинг максимальных процентных ставок",
     ),
     "CL_PRODUCT_GAR_MARK": (
-        "bank guarantee", "guarantee", "банковск гарант", "гаранти",
+        "bank guarantee fee", "bank guarantee terms", "guarantee commission",
+        "fees for bank guarantees", "условия банковск гарант",
+        "комисси за банковск гарант", "стоимост банковск гарант", "срок банковск гарант",
     ),
 }
 TRADE_EVENT_TERMS = (
@@ -384,9 +394,23 @@ def _contains_identifier(text: str, identifier: str) -> bool:
 
 
 def _event_text(event: dict[str, Any]) -> str:
-    # Match against source text and revalidated quotations only. Model-generated
-    # topic/entity labels must not manufacture company or industry connections.
+    # Full source text remains available for exact company or network ID mentions.
     parts = [event.get("title"), event.get("content"), event.get("summary")]
+    parts.extend(fact.get("quote") for fact in event.get("confirmed_facts", []) if isinstance(fact, dict))
+    return "\n".join(str(part) for part in parts if part)
+
+
+def _profile_signal_text(event: dict[str, Any]) -> str:
+    # Sector and trade matches rely on the headline and revalidated facts.
+    # Incidental mentions buried in article bodies or boilerplate do not count.
+    parts = [event.get("title")]
+    parts.extend(fact.get("quote") for fact in event.get("confirmed_facts", []) if isinstance(fact, dict))
+    return "\n".join(str(part) for part in parts if part)
+
+
+def _product_signal_text(event: dict[str, Any]) -> str:
+    # Product mechanisms can also appear in an RSS excerpt.
+    parts = [event.get("title"), event.get("summary")]
     parts.extend(fact.get("quote") for fact in event.get("confirmed_facts", []) if isinstance(fact, dict))
     return "\n".join(str(part) for part in parts if part)
 
@@ -445,6 +469,8 @@ def _region_names(event: dict[str, Any]) -> set[str]:
 
 def _profile_signals(profile: dict[str, Any], event: dict[str, Any], network: dict[str, Any] | None) -> list[dict[str, Any]]:
     text = _event_text(event)
+    signal_text = _profile_signal_text(event)
+    product_text = _product_signal_text(event)
     company_id = str(profile.get("SYNTHETIC_U") or "")
     signals: list[dict[str, Any]] = []
 
@@ -464,15 +490,26 @@ def _profile_signals(profile: dict[str, Any], event: dict[str, Any], network: di
             "field": "NETWORK_linked_SYNTHETIC_U", "value": linked_mentions[0], "status": "exact_id_match",
         })
 
-    domains = _event_domains(text)
+    domains = _event_domains(signal_text)
     company_domain = _company_domain(profile)
     if company_domain and company_domain in domains:
         code = str(profile.get("MAINOKVED_CODE") or "")
         name = str(profile.get("MAINOKVED_NAME") or "")
+        infrastructure_program = (
+            company_domain == "construction"
+            and any(_contains(signal_text, phrase) for phrase in (
+                "критической инфраструктуры", "critical infrastructure",
+            ))
+            and any(_contains(signal_text, phrase) for phrase in (
+                "кредитовании проектов", "кредитование проектов",
+                "финансирование проектов", "проектное финансирование",
+            ))
+        )
         signals.append({
             "kind": "industry", "strength": 48, "exposure": 45,
             "reason": f"Тема публикации может относиться к {DOMAIN_LABELS.get(company_domain, 'отрасли из профиля')}. Фактическая деятельность и влияние на компанию не подтверждены.",
             "field": "MAINOKVED_CODE", "value": f"{code} · {name}".strip(" ·"), "status": "rule_based_match",
+            "specificity": "event_specific_sector" if infrastructure_program else "thematic_sector",
         })
 
     region = str(profile.get("REGION") or "").strip()
@@ -491,17 +528,18 @@ def _profile_signals(profile: dict[str, Any], event: dict[str, Any], network: di
     }
     matching_products = [
         field for field, terms in BANK_PRODUCT_EVENT_TERMS.items()
-        if _flag(profile.get(field)) and any(_contains(text, phrase) for phrase in terms)
+        if _flag(profile.get(field)) and any(_contains(product_text, phrase) for phrase in terms)
     ]
     for field in matching_products:
         label = product_labels[field]
         signals.append({
             "kind": "bank_product", "strength": 38, "exposure": 32,
-            "reason": f"В тексте есть тема, связанная с продуктом «{label}»; в профиле отмечен соответствующий признак. Он не подтверждает действующий договор, остаток или применимость условий.",
+            "reason": f"В заголовке, выдержке или подтверждённом факте найден механизм продукта «{label}»; флаг профиля не подтверждает действующий договор, остаток или применимость условий.",
             "field": field, "value": str(profile.get(field)), "status": "profile_flag_only",
+            "specificity": "product_mechanism",
         })
 
-    trade = bool(domains.intersection({"trade"})) and any(_contains(text, phrase) for phrase in TRADE_EVENT_TERMS)
+    trade = bool(domains.intersection({"trade"})) and any(_contains(signal_text, phrase) for phrase in TRADE_EVENT_TERMS)
     if trade and _flag(profile.get("FTS_FLAG")):
         signals.append({
             "kind": "foreign_trade", "strength": 48, "exposure": 50,
@@ -596,6 +634,19 @@ def _build_chains(event: dict[str, Any], signals: list[dict[str, Any]]) -> list[
     return chains
 
 
+def _ranking_tier(status: str, signals: list[dict[str, Any]]) -> int:
+    """Order direct and mechanism-specific matches before broad themes."""
+    if status == "insufficient_evidence":
+        return 4
+    if status == "potential_match":
+        return 0
+    if any(signal.get("specificity") in {"product_mechanism", "event_specific_sector"} for signal in signals):
+        return 1
+    if status == "weak_match":
+        return 2
+    return 3
+
+
 def score_event(company_profile: dict[str, Any], event: dict[str, Any], network: dict[str, Any] | None = None, *, today: date | None = None) -> dict[str, Any]:
     """Calculate an explainable priority score; it is not a probability or impact sign."""
     today = today or date.today()
@@ -623,6 +674,7 @@ def score_event(company_profile: dict[str, Any], event: dict[str, Any], network:
         status = "weak_match"
     else:
         status = "no_confirmed_match"
+    ranking_tier = _ranking_tier(status, signals)
     reasons = [
         {"text": item["reason"], "field": item["field"], "value": item["value"], "status": item["status"], "signal": item["kind"]}
         for item in signals
@@ -648,6 +700,7 @@ def score_event(company_profile: dict[str, Any], event: dict[str, Any], network:
         "relevance_score": connection,
         "event_importance": potential,
         "status": status,
+        "ranking_tier": ranking_tier,
         "impact_direction": "unclear",
         "components": components,
         "weights": WEIGHTS.copy(),
@@ -717,8 +770,7 @@ def rank_personalized_events(
         connection.commit()
     finally:
         connection.close()
-    status_order = {"potential_match": 0, "weak_match": 1, "no_confirmed_match": 2, "insufficient_evidence": 3}
-    results.sort(key=lambda item: (status_order.get(item["status"], 4), -item["score"], item.get("published_at") or "", item["event_id"]))
+    results.sort(key=lambda item: (item["ranking_tier"], -item["score"], item.get("published_at") or "", item["event_id"]))
     return results
 
 

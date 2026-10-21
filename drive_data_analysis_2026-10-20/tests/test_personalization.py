@@ -210,6 +210,39 @@ class PersonalizationTests(unittest.TestCase):
         self.assertEqual(0, credit["relevance_score"])
         self.assertGreater(loan_credit["relevance_score"], credit["relevance_score"])
 
+    def test_credit_institution_mentions_do_not_match_a_company_loan_flag(self) -> None:
+        profile = {
+            **self.profile,
+            "CL_PRODUCT_GAR_MARK": "0.0",
+            "CL_PRODUCT_DEP_MARK": "0.0",
+        }
+        event = {
+            **self.event,
+            "title": "Банк России утвердил перечень системно значимых кредитных организаций",
+            "content": "Банк России утвердил перечень системно значимых кредитных организаций.",
+            "summary": "",
+            "confirmed_facts": [],
+            "classifications": {"topics": [], "genres": [], "sentivent_events": [], "events": [], "entities": []},
+        }
+        result = stage6.score_event(profile, event, today=self.today)
+        self.assertNotIn("bank_product", {reason["signal"] for reason in result["reasons"]})
+        self.assertEqual(0, result["relevance_score"])
+
+    def test_incidental_industry_and_product_mentions_in_article_body_do_not_create_relevance(self) -> None:
+        event = {
+            **self.event,
+            "title": "Ценные бумаги включены в ломбардный список",
+            "summary": "",
+            "content": "В пояснительной части упомянуто проектное финансирование инфраструктурного строительства.",
+            "confirmed_facts": [],
+            "classifications": {"topics": [], "genres": [], "sentivent_events": [], "events": [], "entities": []},
+        }
+        result = stage6.score_event(self.profile, event, today=self.today)
+        signals = {reason["signal"] for reason in result["reasons"]}
+        self.assertNotIn("industry", signals)
+        self.assertNotIn("bank_product", signals)
+        self.assertEqual(0, result["relevance_score"])
+
     def test_event_importance_is_separate_from_company_relevance(self) -> None:
         generic_rate_event = {
             **self.event,
@@ -326,6 +359,44 @@ class PersonalizationTests(unittest.TestCase):
         self.assertEqual(result[0]["event_id"], "matched")
         self.assertEqual(result[0]["status"], "weak_match")
         self.assertEqual(result[1]["status"], "no_confirmed_match")
+
+    def test_event_specific_signals_rank_ahead_of_broad_themes_and_global_news(self) -> None:
+        profile = {**self.profile, "CL_PRODUCT_GAR_MARK": "0.0"}
+        specific = {
+            **self.event,
+            "event_id": "specific-program",
+            "title": "Кредитование проектов по защите объектов критической инфраструктуры",
+            "content": "Кредитование проектов по защите объектов критической инфраструктуры.",
+            "summary": "",
+            "confirmed_facts": [],
+            "classifications": {"topics": [], "genres": [], "sentivent_events": [], "events": [], "entities": []},
+        }
+        thematic = {
+            **self.event,
+            "event_id": "broad-sector",
+            "title": "Утверждены новые правила строительства жилья",
+            "content": "Утверждены новые правила строительства жилья.",
+            "summary": "",
+            "confirmed_facts": [],
+            "classifications": {"topics": [], "genres": [], "sentivent_events": [], "events": [], "entities": []},
+        }
+        global_news = {
+            **self.event,
+            "event_id": "global-rate",
+            "title": "Банк России изменил ключевую ставку",
+            "content": "Банк России изменил ключевую ставку.",
+            "summary": "",
+            "confirmed_facts": [],
+            "classifications": {"topics": [], "genres": [], "sentivent_events": [], "events": [], "entities": []},
+        }
+        ranked = stage6.rank_personalized_events(
+            profile, [global_news, thematic, specific], cache_path=self.cache, today=self.today,
+        )
+        self.assertEqual(
+            [item["event_id"] for item in ranked],
+            ["specific-program", "broad-sector", "global-rate"],
+        )
+        self.assertEqual([item["ranking_tier"] for item in ranked], [1, 2, 3])
 
     def test_excerpts_and_old_events_lower_quality_or_freshness(self) -> None:
         full = stage6.score_event(self.profile, self.event, today=self.today)
