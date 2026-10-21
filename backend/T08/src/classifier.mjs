@@ -80,7 +80,6 @@ async function requestApprovedJson({ model: requestedModel = model, system, user
       response_format: { type: 'json_object' },
       include_reasoning: false,
       reasoning_effort: 'none',
-      thinking: { type: 'disabled' },
       max_tokens: maxTokens,
     }),
   })
@@ -259,7 +258,7 @@ async function chooseChild({ state, task, question, options, parentPath }) {
         },
       ],
       response_format: { type: 'json_object' },
-      thinking: { type: 'disabled' },
+      include_reasoning: false,
       reasoning_effort: 'none',
       max_tokens: 1200,
     }),
@@ -512,7 +511,6 @@ async function requestDeepSeekTopic(state, candidates) {
       response_format: { type: 'json_object' },
       include_reasoning: false,
       reasoning_effort: 'none',
-      thinking: { type: 'disabled' },
       max_tokens: 4096,
     }),
   })
@@ -896,7 +894,6 @@ async function requestEventEvidenceReview(state, candidate) {
       response_format: { type: 'json_object' },
       include_reasoning: false,
       reasoning_effort: 'none',
-      thinking: { type: 'disabled' },
       max_tokens: 4096,
     }),
   })
