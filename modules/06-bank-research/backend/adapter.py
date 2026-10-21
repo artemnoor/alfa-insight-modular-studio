@@ -1,0 +1,23 @@
+from __future__ import annotations
+import sys
+from pathlib import Path
+from rank_bm25 import BM25Okapi
+ROOT=Path(__file__).resolve().parents[3]
+sys.path.insert(0,str(ROOT/"drive_data_analysis_2026-10-20"))
+import stage2_rag
+DOCS=[
+ {"chunk_id":"credit-p1","page_id":"credit-p1","doc_title":"Обзор рынков кредитования","page_number":1,"publication_date":"2026-10-01","extraction_method":"fixture","text":"Банки оценивают кредитный риск проектов инфраструктуры и условия финансирования организаций."},
+ {"chunk_id":"deposit-p2","page_id":"deposit-p2","doc_title":"Депозитные ставки для организаций","page_number":2,"publication_date":"2026-10-02","extraction_method":"fixture","text":"Депозитные ставки и сроки размещения средств организаций зависят от продукта и суммы."},
+ {"chunk_id":"market-p3","page_id":"market-p3","doc_title":"Макроэкономический обзор","page_number":3,"publication_date":"2026-10-03","extraction_method":"fixture","text":"Деловая активность и отраслевой спрос представлены как общий макроэкономический прогноз."},
+]
+def run(payload):
+    query=str(payload["query"]) if "query" in payload else "кредитный риск инфраструктурных проектов"
+    docs=payload.get("documents") or DOCS
+    corpus=[stage2_rag.tokenize(row["text"]) for row in docs]
+    old=stage2_rag.load_index
+    try:
+        stage2_rag.load_index=lambda:({"chunks":docs},BM25Okapi(corpus),corpus)
+        result=stage2_rag.retrieve(query,"",top_k=int(payload.get("top_k",5)))
+    finally: stage2_rag.load_index=old
+    return {"query":query,**result,"limitations":["Терминологическое совпадение само по себе не подтверждает применимость к событию."],"provenance":{"kind":"synthetic documents","sources":["stage2_rag.retrieve (BM25)"],"externalCalls":0}}
+

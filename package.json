@@ -6,6 +6,12 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:frontend": "vite --host 127.0.0.1",
+    "studio": "node scripts/studio.mjs",
+    "studio:module": "node scripts/studio.mjs",
+    "product": "node scripts/studio.mjs --product",
+    "test:module": "node scripts/test-module.mjs",
+    "test:all": "node scripts/test-all.mjs",
+    "test:e2e:studio": "node scripts/e2e-studio.mjs",
     "api": "python drive_data_analysis_2026-10-20/react_api.py",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -18,6 +24,7 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^6.1.2",
+    "playwright": "^1.64.1",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
   },

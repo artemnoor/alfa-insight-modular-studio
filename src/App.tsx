@@ -8,7 +8,8 @@ import T12 from './blocks/T12'
 import T13 from './blocks/T13'
 import type { T08Snapshot } from './blocks/T08'
 import Archive from './archive'
-import InsightApp from './insight/InsightApp'
+import InsightApp from '../apps/product/ProductApp'
+import StudioApp from '../apps/studio/StudioApp'
 
 const blocks = { T08, T09, T10, T11, T12, T13 }
 type BlockId = keyof typeof blocks
@@ -63,6 +64,7 @@ function LabWorkspace({ onReturn }: { onReturn: () => void }) {
 }
 
 export default function App() {
+  const path = window.location.pathname
   const [showLab, setShowLab] = useState(() => new URLSearchParams(window.location.search).get('view') === 'internal')
   const returnHome = () => {
     const url = new URL(window.location.href)
@@ -70,6 +72,8 @@ export default function App() {
     window.history.replaceState({}, '', url)
     setShowLab(false)
   }
+  if (path === '/studio' || path.startsWith('/studio/')) return <StudioApp />
+  if (path === '/product') return <InsightApp />
   return showLab
     ? <LabWorkspace onReturn={returnHome} />
     : <InsightApp />

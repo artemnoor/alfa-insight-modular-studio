@@ -49,6 +49,7 @@ def _load_local_env() -> None:
 _load_local_env()
 
 sys.path.insert(0, str(APP_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from business_graph import DB_PATH as GRAPH_DB_PATH, build_ai_context, get_company_network  # noqa: E402
 from stage1_analyzer import DEMO_COMPANY_IDS, get_api_key, load_companies  # noqa: E402
@@ -65,9 +66,15 @@ from insight_history import (  # noqa: E402
     save_chat_exchange,
     save_research,
 )
+from shared.backend.modules_api import dispatch as _dispatch_module_api  # noqa: E402
 
 
-_companies = load_companies()
+try:
+    _companies = load_companies()
+except FileNotFoundError:
+    # Studio fixture routes must remain available when the optional local bank
+    # CSV is not present in a clean clone. Product routes report this clearly.
+    _companies = None
 _company_lock = threading.RLock()
 _jobs_lock = threading.RLock()
 _jobs: dict[str, dict[str, Any]] = {}
@@ -139,6 +146,8 @@ def _safe_event_id(value: Any) -> str | None:
 
 def _company_cards(query: str = "") -> list[dict[str, str]]:
     frame = _companies
+    if frame is None:
+        return []
     query = query.strip().lower()[:100]
     if query:
         frame = frame.loc[frame["_search"].str.contains(re.escape(query), regex=True, na=False)]
@@ -159,6 +168,8 @@ def _company_cards(query: str = "") -> list[dict[str, str]]:
 
 
 def _profile(company_id: str) -> dict[str, str] | None:
+    if _companies is None:
+        return None
     rows = _companies.loc[_companies["SYNTHETIC_U"] == company_id]
     if len(rows) != 1:
         return None
@@ -685,6 +696,7 @@ def _run_job(job_id: str) -> None:
                     ],
                     "usage": {"cost_rub": 0, "input_tokens": 0, "output_tokens": 0, "tool_calls": 4},
                 }
+            initialize_history()
             save_research(result)
             _set_job(job_id, status="complete", stage="Исследование готово", progress=1, result=result)
             return
@@ -718,6 +730,7 @@ def _run_job(job_id: str) -> None:
                 answer, citations = _local_chat_answer(question, workspace["profile"], event, ranked, workspace)
                 _set_job(job_id, stage="Сохраняю ответ в истории этого события", progress=0.85)
                 mode = "local_demo"
+            initialize_history()
             messages = save_chat_exchange(
                 request_key=request_key, company_id=company_id, event_id=event_id,
                 question=question, answer=answer, citations=citations, mode=mode,
@@ -779,6 +792,9 @@ class Handler(BaseHTTPRequestHandler):
         return value
 
     def do_GET(self) -> None:  # noqa: N802
+        module_result = _dispatch_module_api("GET", self.path)
+        if module_result is not None:
+            return self._send(*module_result)
         request = urlparse(self.path)
         query = parse_qs(request.query)
         if request.path == "/api/health":
@@ -786,10 +802,15 @@ class Handler(BaseHTTPRequestHandler):
                 "ok": True, "service": "Alfa Insight local adapter",
                 "aiMode": "external" if _external_ai_enabled() else "local_demo",
                 "graphAvailable": GRAPH_DB_PATH.is_file(),
+                "productDataAvailable": _companies is not None,
             })
         if request.path == "/api/companies":
+            if _companies is None:
+                return self._send(200, {"companies": [], "status": "unavailable", "message": "Список компаний временно недоступен. Подключите локальные профили компаний."})
             return self._send(200, {"companies": _company_cards(query.get("q", [""])[0][:100])})
         if request.path == "/api/workspace":
+            if _companies is None:
+                return self._send(503, {"error": "Локальные профили компаний не подключены. Выберите подготовленную фикстуру в Studio."})
             company_id = _safe_company_id(query.get("companyId", [""])[0])
             if not company_id:
                 return self._send(400, {"error": "Укажите корректный ID компании."})
@@ -869,6 +890,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         request_path = urlparse(self.path).path
+        if request_path.startswith("/api/modules/"):
+            body = self._read_body()
+            if body is None:
+                return
+            module_result = _dispatch_module_api("POST", self.path, body)
+            if module_result is not None:
+                return self._send(*module_result)
         if request_path not in {"/api/research", "/api/chat"}:
             return self._send(404, {"error": "Страница не найдена."})
         body = self._read_body()
@@ -917,7 +945,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    initialize_history()
     print(f"Alfa Insight API listening on http://{HOST}:{PORT} (mode={'external' if _external_ai_enabled() else 'local_demo'})")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 

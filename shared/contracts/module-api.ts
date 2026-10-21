@@ -1,0 +1,32 @@
+export type ModuleDataMode = 'fixture' | 'local_data' | 'external_ai'
+export type ValidationStatus = 'PASS' | 'FAIL'
+
+export type ModuleApiError = {
+  contractVersion: '1.0'
+  error: { code: string; message: string; detail?: string }
+}
+
+export type ModuleCheck = {
+  name: string
+  passed: boolean
+  expected: Record<string, unknown>
+  actual: unknown
+}
+
+export type ModuleRunResponse<TData = Record<string, unknown>> = {
+  contractVersion: '1.0'
+  module: string
+  mode: ModuleDataMode
+  status: 'ok' | 'validation_failed'
+  data: TData
+  provenance: Record<string, unknown>
+  validation: { status: ValidationStatus; checks: ModuleCheck[] }
+}
+
+export type ModuleTestSuiteResponse = {
+  contractVersion: '1.0'
+  module: string
+  mode: 'Fixture'
+  status: ValidationStatus
+  scenarios: Array<{ id: string; name: string; status: ValidationStatus; checks?: ModuleCheck[]; error?: string }>
+}

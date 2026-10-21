@@ -23,7 +23,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   companies: (query = '', signal?: AbortSignal) =>
-    request<{ companies: CompanyCard[] }>(`/api/companies?q=${encodeURIComponent(query)}`, { signal }),
+    request<{ companies: CompanyCard[]; status?: string; message?: string }>(`/api/companies?q=${encodeURIComponent(query)}`, { signal }),
 
   workspace: (companyId: string, signal?: AbortSignal) =>
     request<Workspace>(`/api/workspace?companyId=${encodeURIComponent(companyId)}`, { signal }),

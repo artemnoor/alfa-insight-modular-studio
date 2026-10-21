@@ -101,6 +101,7 @@ export default function InsightApp() {
   const [companyPickerOpen, setCompanyPickerOpen] = useState(false)
   const [companySearch, setCompanySearch] = useState('')
   const [companyMatches, setCompanyMatches] = useState<CompanyCard[]>([])
+  const [companySearchError, setCompanySearchError] = useState('')
   const [companySearchBusy, setCompanySearchBusy] = useState(false)
   const [eventSearch, setEventSearch] = useState('')
   const [bankResearch, setBankResearch] = useState<BankResearch | null>(null)
@@ -174,9 +175,13 @@ export default function InsightApp() {
     if (!companyPickerOpen) return
     const controller = new AbortController()
     setCompanySearchBusy(true)
+    setCompanySearchError('')
     const timer = window.setTimeout(() => {
       api.companies(companySearch, controller.signal)
-        .then(({ companies }) => setCompanyMatches(companies))
+        .then(({ companies, status, message }) => {
+          setCompanyMatches(companies)
+          setCompanySearchError(status === 'unavailable' ? message || 'Список компаний временно недоступен.' : '')
+        })
         .catch(() => { if (!controller.signal.aborted) setCompanyMatches([]) })
         .finally(() => { if (!controller.signal.aborted) setCompanySearchBusy(false) })
     }, companySearch ? 180 : 0)
@@ -405,7 +410,8 @@ export default function InsightApp() {
                       <strong>{company.id}</strong><span>{company.industry} · {company.region}</span>
                     </button>
                   ))}
-                  {!companySearchBusy && companyMatches.length === 0 && <p className="insight-popover-note">Совпадений нет. Проверьте ID или запрос.</p>}
+                  {!companySearchBusy && companySearchError && <p className="insight-popover-note" role="status">{companySearchError}</p>}
+                  {!companySearchBusy && !companySearchError && companyMatches.length === 0 && <p className="insight-popover-note">Совпадений нет. Проверьте ID или запрос.</p>}
                 </div>
                 <button className="insight-popover-close" type="button" onClick={() => setCompanyPickerOpen(false)}>Закрыть</button>
               </div>
