@@ -42,6 +42,8 @@ try {
     const heading = (await page.locator('.module-heading h1').innerText()).trim()
     const backendStatus = await page.locator('.module-status-row').innerText()
     if (!backendStatus.includes('доступен')) throw new Error(`${slug}: backend недоступен: ${backendStatus}`)
+    // Tests must stay free and deterministic even when External AI is enabled in user env.
+    await page.locator('.module-mode select').selectOption('fixture')
     if (slug === 'personalization') {
       const localOptionDisabled = await page.locator('.module-mode option[value="local_data"]').evaluate(option => option.disabled)
       if (localOptionDisabled !== !productHealth.productDataAvailable) throw new Error('Доступность Local Data не соответствует подключённым локальным источникам.')
@@ -183,12 +185,14 @@ try {
   const mobileWidth = await mobile.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
   if (mobileWidth.content > mobileWidth.viewport) throw new Error(`Мобильная Studio переполняет ширину: ${JSON.stringify(mobileWidth)}`)
   await mobile.goto(`${base}/studio/news-intelligence`, { waitUntil: 'networkidle' })
+  await mobile.locator('.module-mode select').selectOption('fixture')
   await mobile.getByRole('button', { name: 'Запустить алгоритм' }).click()
   await mobile.locator('.module-specific-result').waitFor({ timeout: 20000 })
   const newsIntelligenceMobileWidth = await mobile.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
   if (newsIntelligenceMobileWidth.content > newsIntelligenceMobileWidth.viewport) throw new Error(`Мобильный News Intelligence переполняет ширину: ${JSON.stringify(newsIntelligenceMobileWidth)}`)
   await mobile.screenshot({ path: path.join(out,'news-intelligence-mobile-390.png'), fullPage: true })
   await mobile.goto(`${base}/studio/personalization`, { waitUntil: 'networkidle' })
+  await mobile.locator('.module-mode select').selectOption('fixture')
   await mobile.locator('.module-control select').selectOption('compare')
   await mobile.getByRole('button', { name: 'Запустить алгоритм' }).click()
   await mobile.locator('.module-specific-result').waitFor({ timeout: 20000 })
@@ -212,3 +216,4 @@ try {
 } finally {
   await browser.close()
 }
+

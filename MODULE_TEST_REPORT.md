@@ -1,6 +1,25 @@
 # Modular Studio test report
 
-**Date:** 2026-10-21. **Runtime:** Node 22.13, Python 3.11, Chromium. **External AI:** disabled. **Local data:** read-only source paths supplied at launch; derived graph cache and test history stayed in this clone.
+## Latest verification — 2026-10-22
+
+**Verdict:** all nine Studio modules passed their deterministic browser flow and fixture suite. Eight supported `Local Data` API paths also returned HTTP 200 with local provenance and no external AI calls. This does not prove every paid model workflow: no external AI module run or live RSS fetch was started in this pass because the cost of an earlier module attempt is unknown.
+
+| Check | Status | Evidence |
+|---|---|---|
+| `npm run test:all` | PASS | Build; 7 API contract tests; 94 existing Python tests; T08 13, T09 16, T10 67, pipeline 7; all 9 module suites. |
+| `npm run test:e2e:studio` | PASS | Chromium opened all 9 routes, ran each module and its fixture suite twice, saw 9 available backends, 0 page/console errors, and no horizontal overflow at desktop/laptop/mobile checks. E2E now explicitly selects Fixture before running. |
+| All module fixture suites | PASS | 29 scenarios across 9 modules; the AI Agent fixture executes the orchestrator with deterministic tool responses, and News Intelligence exercises T08/T09 with synthetic model responses. |
+| Local Data API | PASS / NOT_EVALUATED | Eight supported routes returned HTTP 200 from local source adapters; `externalCalls` was 0 where reported. API validation is `NOT_EVALUATED` when a run has no acceptance criteria, so it is not mislabeled PASS. |
+| Core product, real local profile | PASS / PARTIAL | Opened U_9250's 20-event feed, opened the critical-infrastructure lending event, switched to U_57706 and confirmed company context changed. Chat/research actions were not triggered. Existing history displayed 10 messages with repeated question/answer entries; history was left untouched. |
+| Responsive layout | PASS | All 9 module pages checked at 1440, 1280 and 390 px; the client product was checked at 390 px. No horizontal overflow. |
+| External AI modules | NOT VERIFIED in this pass | No new paid module call. A previous minimal Polza completion returned HTTP 200 and reported 0.00114052 ₽, but the earlier full News Intelligence attempt's output and cost were lost. |
+| Live News Collector RSS | NOT RUN in this pass | Its local catalog showed 13 stored publications and last status `ok`; no new fetch or SQLite write was made. |
+
+Chromium captures from the E2E run are in `output/playwright/modular-studio/` (ignored by Git). The direct product check did not submit chat questions or start research, and this pass did not clear or modify stored history.
+
+The section below records the earlier 2026-10-21 verification and remains historical where it conflicts with the latest results.
+
+**Historical runtime:** Node 22.13, Python 3.11, Chromium. **Historical external AI mode:** disabled for the earlier pass. **Local data:** read-only source paths supplied at launch; derived graph cache and test history stayed in this clone.
 
 ## Results
 
@@ -42,3 +61,4 @@ Chromium captures are in `output/playwright/modular-studio/`: `studio-desktop.pn
 ## Interpretation
 
 The product and all nine workspaces open and execute their supported fixture flows. Modules 03, 04, and 06 also ran against configured local files; Module 01 fetched one public RSS feed; and the product completed a local research/chat path. News Intelligence's fixture proves the existing T08/T09 code can run end to end through the module interface, but synthetic model answers make its displayed topic/event unsuitable for judging classification quality. PASS means the interface executed its tested path; it does not assert that all source data is complete or that every AI/RAG result is semantically correct. In particular, the observed BM25 result was not a direct answer to the query.
+

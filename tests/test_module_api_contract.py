@@ -30,14 +30,14 @@ class ModuleApiContractTests(unittest.TestCase):
         self.assertEqual(status, 405)
         self.assertEqual(result["error"]["code"], "METHOD_NOT_ALLOWED")
 
-    def test_external_ai_requires_agent_route_and_explicit_opt_in(self):
-        with patch.dict(os.environ, {"ALFA_ENABLE_EXTERNAL_AI": "0"}):
+    def test_external_ai_requires_explicit_opt_in_for_supported_modules(self):
+        with patch.dict(os.environ, {"ALFA_ENABLE_EXTERNAL_AI": "0", "ALFA_ALLOW_EXTERNAL_AI": "0"}):
             status, result = dispatch("POST", "/api/modules/ai-agent/run", {"mode": "external_ai"})
             self.assertEqual(status, 409)
             self.assertEqual(result["error"]["code"], "EXTERNAL_AI_UNAVAILABLE")
         status, result = dispatch("POST", "/api/modules/personalization/run", {"mode": "external_ai"})
-        self.assertEqual(status, 403)
-        self.assertEqual(result["error"]["code"], "EXTERNAL_AI_NOT_SUPPORTED")
+        self.assertEqual(status, 409)
+        self.assertEqual(result["error"]["code"], "EXTERNAL_AI_UNAVAILABLE")
 
     def test_invalid_mode_and_unavailable_local_mode_are_explained(self):
         status, result = dispatch("POST", "/api/modules/news-collector/run", {"mode": "remote_magic"})
@@ -63,7 +63,9 @@ class ModuleApiContractTests(unittest.TestCase):
                 self.assertTrue(_local_data_available("business-intelligence"))
                 self.assertTrue(_local_data_available("personalization"))
                 self.assertTrue(_local_data_available("bank-research"))
-                self.assertFalse(_local_data_available("ai-agent"))
+                self.assertTrue(_local_data_available("ai-agent"))
+                self.assertTrue(_local_data_available("impact-analysis"))
+                self.assertTrue(_local_data_available("alfa-product"))
                 bank.return_value = root / "missing.json"
                 self.assertFalse(_local_data_available("bank-research"))
 
@@ -110,3 +112,4 @@ class ModuleApiContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
