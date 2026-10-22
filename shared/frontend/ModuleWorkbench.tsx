@@ -57,6 +57,21 @@ export function ModuleWorkbench({ spec }: Props) {
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, { value: string; label: string }[]>>({})
   const [optionSearch, setOptionSearch] = useState<Record<string, string>>({})
   const agentResult = result?.data as Record<string, any> | undefined
+  const resultDescription = result?.mode === 'live_feed'
+    ? 'Результат реального запроса к публичному источнику. Сбор и ошибки источника отражены ниже.'
+    : result?.mode === 'external_ai'
+      ? 'Реальный ручной запрос к Polza AI и подключённым данным. Модель, вызовы и ограничения показаны в результате.'
+      : result?.mode === 'local_data'
+        ? 'Алгоритм выполнен на подключённых локальных данных без отправки профиля во внешний сервис.'
+        : mode === 'external_ai'
+          ? error
+            ? 'Внешний AI-запрос завершился ошибкой. Подробности и учёт вызовов показаны в сообщении об ошибке.'
+            : 'Результат ручного запроса к Polza AI появится здесь после завершения анализа.'
+          : mode === 'local_data'
+            ? 'Результат обработки подключённых локальных данных без внешнего AI.'
+            : mode === 'live_feed'
+              ? 'После ручного запроса здесь появятся публикации, статус источника и ошибки сбора.'
+              : 'Fixture-сценарий: подготовленные тестовые данные и изолированные ответы модели.'
 
   useEffect(() => {
     const connectedAIHealth = spec.id === 'news-collector'
@@ -207,7 +222,7 @@ export function ModuleWorkbench({ spec }: Props) {
         {error && <div className="module-error" role="alert">{error}</div>}
       </form>
       <section className="module-panel module-results" aria-live="polite">
-        <div className="module-panel-title"><div><h2>Результат</h2><p>{result?.mode === 'live_feed' ? 'Результат реального запроса к публичному источнику. Сбор и ошибки источника отражены ниже.' : result?.mode === 'external_ai' ? 'Реальный ручной запрос к Polza AI и подключённым данным. Модель, вызовы и ограничения показаны в результате.' : result?.mode === 'local_data' ? 'Алгоритм выполнен на подключённых локальных данных без отправки профиля во внешний сервис.' : 'Fixture-сценарий: подготовленные тестовые данные и изолированные ответы модели.'}</p></div>{result && <span className={`module-badge module-badge--${statusTone(result.validation?.status)}`}>{result.validation?.status || result.status}</span>}</div>
+        <div className="module-panel-title"><div><h2>Результат</h2><p>{resultDescription}</p></div>{result && <span className={`module-badge module-badge--${statusTone(result.validation?.status)}`}>{result.validation?.status || result.status}</span>}</div>
         {!result && !testRun && !busy && <div className="module-empty"><strong>{mode === 'external_ai' ? 'Реальный AI-анализ готов к ручному запуску' : mode === 'local_data' ? 'Локальные данные готовы к запуску' : mode === 'live_feed' ? 'Живая RSS-лента готова к сбору' : 'Фикстурный сценарий готов к запуску'}</strong><span>{mode === 'external_ai' ? 'Нажмите кнопку только после выбора реальных входных данных и проверки раскрытия передачи модели.' : mode === 'local_data' ? 'Данные читаются локально; внешний AI не вызывается.' : mode === 'live_feed' ? 'Запрос к публичному RSS выполняется только после нажатия кнопки.' : 'Этот режим использует подготовленные данные для бесплатной проверки потока.'}</span></div>}
         {busy && <div className="module-loading"><span className="module-spinner" />{busy === 'tests' ? `Выполняю набор из ${scenarios.length} сценариев…` : 'Передаю данные адаптеру и запускаю алгоритм…'}</div>}
         {result && <>
