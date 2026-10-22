@@ -1,3 +1,4 @@
+import { fetchPolza } from '../../../shared/backend/polza_transport.mjs'
 import { assertHackApprovedModel, DEFAULT_HACK_MODEL } from '../../allowed-models.mjs'
 
 const relationModel = assertHackApprovedModel(process.env.T09_RELATION_MODEL || DEFAULT_HACK_MODEL, 'T09_RELATION_MODEL')
@@ -59,9 +60,9 @@ async function requestModelComparisons(article, candidates) {
     ...candidate,
     candidateKey: `candidate_${index + 1}`,
   }))
-  const response = await fetch(endpoint('chat/completions'), {
+  const response = await fetchPolza(endpoint('chat/completions'), {
     method: 'POST',
-    signal: AbortSignal.timeout(90_000),
+    timeoutMs: 90_000,
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model: relationModel,
@@ -87,8 +88,7 @@ async function requestModelComparisons(article, candidates) {
       ],
       response_format: { type: 'json_object' },
       include_reasoning: false,
-      reasoning_effort: 'none',
-      thinking: { type: 'disabled' },
+      reasoning: { effort: 'none' },
       max_tokens: 4000,
     }),
   })
@@ -224,9 +224,9 @@ async function requestModelReview(article, candidates, relationResult) {
     initial_model_relation: candidate.relationComparison?.relation,
     initial_model_confidence: Number(candidate.relationComparison?.confidence?.toFixed(3) || 0),
   }))
-  const response = await fetch(endpoint('chat/completions'), {
+  const response = await fetchPolza(endpoint('chat/completions'), {
     method: 'POST',
-    signal: AbortSignal.timeout(75_000),
+    timeoutMs: 75_000,
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model: reviewModel,

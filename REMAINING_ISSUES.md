@@ -1,5 +1,13 @@
 # Remaining issues
 
+## Latest T08 timeout fix (2026-10-22)
+
+The recurring false timeout caused by waiting in a serialized provider queue is fixed. Timers now start at network dispatch, body reads have the same deadline, and Polza receives the documented `reasoning.effort=none`. Known spending survives interrupted requests; successful real answers support explicitly labelled local resume. Unknown-payment requests cannot be resent without an explicit manual selection.
+
+Live Chromium verification: T08/T09 completed in 48 s, 19 calls, 0.59243515 ₽; replay used 19 cached real responses, 0 new calls, 0 ₽, 1 s. Tests/build/nine-route Studio E2E passed. This does not fix unrelated AI Agent token estimation, Impact external evidence routing, or provide an independent classifier-quality benchmark. Genuine provider/network timeouts remain possible; historical unknown charges cannot be reconstructed from old application data.
+
+The Round 5 limitations below remain historical where superseded by this fix.
+
 ## Current status after Round 5 (2026-10-22)
 
 All nine modules were reopened and exercised in Chromium. Their fixture UI runs, module suites, and the nine-route Studio E2E passed. A new external-AI loading message now shows elapsed time and tells users that stage-level progress and exact usage are only available after completion; the full build and E2E passed after this UX change. Overall product readiness remains **PARTIAL**.

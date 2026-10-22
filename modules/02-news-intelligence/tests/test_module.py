@@ -90,5 +90,21 @@ class IsolatedFixtureTests(unittest.TestCase):
         self.assertEqual(len(result["scenarios"]), 4)
         self.assertEqual(result["status"], "PASS", result)
 
+    def test_outer_timeout_preserves_checkpointed_known_spend(self):
+        adapter = _load("news-intelligence")
+        def interrupted(*args, **kwargs):
+            value = json.loads(kwargs["input"])
+            Path(value["usagePath"]).write_text(json.dumps({"modelCalls": 6, "costRub": 0.23,
+                "completedCalls": 5, "unknownCostCalls": 1}), encoding="utf-8")
+            raise subprocess.TimeoutExpired("node", 300)
+        with patch.object(adapter.subprocess, "run", side_effect=interrupted):
+            with self.assertRaises(adapter.ExternalAIRunError) as caught:
+                adapter.run_external({"text": "Синтетическая новость для проверки таймаута и сохранения расходов.",
+                    "t09_candidates": [{"content": "Синтетический кандидат"}]})
+        self.assertEqual(caught.exception.public_code, "POLZA_RUN_TIMEOUT")
+        self.assertEqual(caught.exception.provider_usage["costRub"], 0.23)
+        self.assertEqual(caught.exception.provider_usage["modelCalls"], 6)
+        self.assertFalse(caught.exception.provider_usage["costReported"])
+
 if __name__ == "__main__":
     unittest.main()

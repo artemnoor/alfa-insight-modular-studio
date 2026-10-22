@@ -21,7 +21,7 @@ if (['ai-agent', 'evidence-verification', 'alfa-product'].includes(slug)) {
   if (uiErrorTests.status !== 0) process.exit(uiErrorTests.status ?? 1)
 }
 if (slug === 'news-intelligence') {
-  const providerTests = spawnSync(process.execPath, ['--test', 'modules/02-news-intelligence/tests/provider-limits.test.mjs'], { cwd: root, stdio: 'inherit', env: process.env })
+  const providerTests = spawnSync(process.execPath, ['--test', 'modules/02-news-intelligence/tests/provider-limits.test.mjs', 'modules/02-news-intelligence/tests/provider-transport.test.mjs', 'shared/frontend/tests/module-error-message.test.mjs'], { cwd: root, stdio: 'inherit', env: process.env })
   if (providerTests.status !== 0) process.exit(providerTests.status ?? 1)
 }
 const fixtures = spawnSync(python, ['scripts/test-module-fixtures.py', slug], { cwd: root, stdio: 'inherit', env: process.env })

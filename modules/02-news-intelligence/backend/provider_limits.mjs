@@ -17,7 +17,7 @@ export function providerStopReason(usage) {
   if (usage.providerError) return usage.providerError
   if (usage.budgetExceeded) return {
     code: 'POLZA_COST_LIMIT_REACHED',
-    message: `Фактическая стоимость ${Number(usage.costRub || 0).toFixed(6)} ₽ превысила установленный лимит ${usage.budgetRub} ₽.`,
+    message: `Фактическая стоимость ${Number(usage.costRub || 0).toFixed(6)} ₽ достигла порога ${usage.budgetRub} ₽. Следующие вызовы остановлены.`,
   }
   if (!usage.costReported) return {
     code: 'POLZA_COST_UNKNOWN',

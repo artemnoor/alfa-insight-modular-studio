@@ -5,7 +5,10 @@ const input = JSON.parse(await new Promise((resolve, reject) => {
   process.stdin.on('end', () => resolve(value || '{}'))
   process.stdin.on('error', reject)
 }))
-const { capProviderRequest, MAX_PROVIDER_CALLS, mergeAbortSignals, providerStopReason } = await import('./provider_limits.mjs')
+const { createProviderTransport } = await import('./provider_transport.mjs')
+const { withPolzaTransport } = await import('../../../shared/backend/polza_transport.mjs')
+const { writeFileSync } = await import('node:fs')
+const { fileURLToPath } = await import('node:url')
 
 // Fixture mode exercises the production T08/T09 control flow while preventing every
 // outbound request. External mode calls the approved provider only after a manual run.
@@ -14,16 +17,8 @@ const fixtureApiKey = process.env.POLZA_AI_API_KEY
 const fixtureBaseUrl = process.env.POLZA_API_BASE_URL
 let fixtureModelCalls = 0
 let blockedExternalLookups = 0
-let serialFetchQueue = Promise.resolve()
+let providerTransport
 const providerUsage = { model: null, modelCalls: 0, inputTokens: 0, outputTokens: 0, costRub: 0, costReported: true, budgetRub: Number(input.max_cost_rub || 1), budgetExceeded: false }
-
-function providerGuardError() {
-  const stop = providerStopReason(providerUsage) || { code: 'POLZA_REQUEST_STOPPED', message: 'Внешние запросы остановлены защитным ограничителем.' }
-  const error = new Error(stop.message)
-  error.code = stop.code
-  error.providerUsage = { ...providerUsage }
-  return error
-}
 
 function providerFailure(error) {
   const raw = String(error?.message || error || 'неизвестная ошибка провайдера').replace(/\s+/gu, ' ').trim()
@@ -121,75 +116,20 @@ if (!externalMode) {
   const { HACK_APPROVED_MODEL_IDS } = await import('../../../backend/allowed-models.mjs')
   if (!Number.isFinite(providerUsage.budgetRub) || providerUsage.budgetRub < 0.05 || providerUsage.budgetRub > 5) throw new Error('Лимит стоимости должен быть от 0.05 до 5 ₽.')
   const nativeFetch = globalThis.fetch.bind(globalThis)
-  globalThis.fetch = (url, options = {}) => {
-    const requestTask = serialFetchQueue.then(async () => {
-      if (providerUsage.modelCalls >= MAX_PROVIDER_CALLS || providerUsage.budgetExceeded || !providerUsage.costReported || providerUsage.providerError) throw providerGuardError()
-      const target = new URL(String(url))
-      if (target.hostname !== 'polza.ai') throw new Error('T08/T09 попытался обратиться к неразрешённому хосту.')
-      let request = {}
-      try { request = JSON.parse(options.body || '{}') } catch {}
-      if (!HACK_APPROVED_MODEL_IDS.includes(request.model)) throw new Error('Запрошенная модель отсутствует в allowlist Alfa Insight.')
-      request = capProviderRequest(request)
-      providerUsage.modelCalls += 1
-      providerUsage.model = request.model
-      providerUsage.costReported = false
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 90000)
-      let responseValue
-      try {
-        responseValue = await nativeFetch(target, {
-          ...options,
-          body: JSON.stringify(request),
-          signal: mergeAbortSignals(options.signal, controller.signal),
-        })
-      } catch (cause) {
-        const timedOut = options.signal?.aborted || controller.signal.aborted || cause?.name === 'AbortError' || cause?.name === 'TimeoutError'
-        const code = timedOut ? 'POLZA_REQUEST_TIMEOUT' : 'POLZA_TRANSPORT_ERROR'
-        const message = timedOut ? 'Истёк таймаут запроса к Polza.' : 'Не удалось получить ответ от Polza по сети.'
-        providerUsage.costReported = false
-        providerUsage.providerError = { code, message }
-        const error = new Error(message)
-        error.code = code
-        error.providerUsage = { ...providerUsage }
-        throw error
-      } finally { clearTimeout(timer) }
-      try {
-        const envelope = await responseValue.clone().json()
-        const usage = envelope?.usage || {}
-        providerUsage.inputTokens += Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0
-        providerUsage.outputTokens += Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0
-        const rawCost = usage.cost_rub ?? usage.costRub
-        const cost = rawCost == null ? Number.NaN : Number(rawCost)
-        if (Number.isFinite(cost)) {
-          providerUsage.costRub += cost
-          providerUsage.costReported = true
-          if (providerUsage.costRub > providerUsage.budgetRub) providerUsage.budgetExceeded = true
-        } else providerUsage.costReported = false
-      } catch { providerUsage.costReported = false }
-      if (!responseValue.ok) {
-        const status = responseValue.status
-        const code = status === 401 ? 'POLZA_AUTH_FAILED'
-          : status === 402 ? 'POLZA_BALANCE_OR_LIMIT'
-            : status === 404 ? 'POLZA_MODEL_UNAVAILABLE'
-              : status === 429 ? 'POLZA_RATE_LIMITED'
-                : status >= 500 ? 'POLZA_PROVIDER_UNAVAILABLE' : 'POLZA_REQUEST_FAILED'
-        let message = `Polza вернул HTTP ${status}.`
-        try {
-          const envelope = await responseValue.clone().json()
-          const detail = String(envelope?.error?.message || envelope?.error || '').replace(/\s+/gu, ' ').trim()
-          if (detail) message += ` ${detail.slice(0, 220)}`
-        } catch {}
-        providerUsage.providerError = { code, message }
-        const error = new Error(message)
-        error.code = code
-        error.providerUsage = { ...providerUsage }
-        throw error
-      }
-      return responseValue
-    })
-    serialFetchQueue = requestTask.then(() => undefined, () => undefined)
-    return requestTask
+  // Entity registry lookups are not part of this module's approved data scope.
+  globalThis.fetch = (url, options) => {
+    if (new URL(String(url)).hostname !== 'polza.ai') throw new Error('T08/T09 попытался обратиться к неразрешённому хосту.')
+    return nativeFetch(url, options)
   }
+  providerTransport = createProviderTransport({
+    usage: providerUsage, allowedModels: HACK_APPROVED_MODEL_IDS, fetchImpl: nativeFetch,
+    cacheDir: fileURLToPath(new URL('../../../output/provider-cache/news-intelligence/', import.meta.url)),
+    retryUncertain: input.retry_uncertain === 'yes',
+    onUsage: usage => {
+      if (input.usagePath) writeFileSync(input.usagePath, JSON.stringify(usage), { mode: 0o600 })
+      if (process.env.LOG_LEVEL === 'debug') console.error('[FIX:T08]', JSON.stringify({ calls: usage.modelCalls, cacheHits: usage.cacheHits, knownCostRub: usage.costRub, unknownCostCalls: usage.unknownCostCalls, elapsedMs: usage.elapsedMs }))
+    },
+  })
 }
 
 const [{ rankModelChoices, classifyNews, classifierConfig }, { vectorizeLocalText, LOCAL_VECTOR_MODEL }, { classifyEventRelation }] = await Promise.all([
@@ -210,10 +150,11 @@ const result = {
 
 if (article.trim().length >= 20) {
   try {
-    result.t08Classification = await classifyNews(article, input.metadata || {})
+    result.t08Classification = await withPolzaTransport(providerTransport?.fetch, () => classifyNews(article, input.metadata || {}))
   } catch (error) {
     if (!externalMode) throw error
-    await serialFetchQueue
+    providerTransport.stop()
+    await providerTransport.drain()
     const taxonomyRejected = String(error?.message || '').includes('не выбрала ни одного допустимого ID таксономии')
     result.error = taxonomyRejected
       ? { code: 'TAXONOMY_SELECTION_UNCERTAIN', message: 'Polza вернул ответ без допустимой метки таксономии. T08 остановлен; T09 не запускался.' }
@@ -243,17 +184,28 @@ if (article.trim().length >= 20) {
         similarity: cosine(vector, candidateVector),
       }
     }).sort((left, right) => right.similarity - left.similarity)
-    result.t09EventMatching = await classifyEventRelation({
-      article: { title: input.metadata?.title || 'Публикация из News Intelligence', content: article, contentStatus: input.metadata?.content_status || 'full' },
-      candidates,
-    })
+    result.t08Status = 'complete'
+    try {
+      result.t09EventMatching = await withPolzaTransport(providerTransport?.fetch, () => classifyEventRelation({
+        article: { title: input.metadata?.title || 'Публикация из News Intelligence', content: article, contentStatus: input.metadata?.content_status || 'full' },
+        candidates,
+      }))
+      result.t09Status = 'complete'
+    } catch (error) {
+      if (!externalMode) throw error
+      providerTransport.stop()
+      await providerTransport.drain()
+      result.error = { code: error.code || 'T09_MATCHING_FAILED', message: `T08 завершён. T09 не завершил сравнение: ${String(error.message || 'ошибка провайдера').split('; response=')[0].slice(0, 300)}` }
+      result.t09Status = 'failed'
+    }
   }
 }
 
 if (externalMode) {
   result.providerUsage = { ...providerUsage }
+  result.cacheHit = providerUsage.modelCalls === 0 && providerUsage.cacheHits > 0
   result.provenance = result.error
-    ? { kind: 'Polza AI, manual run failed before T09', model: providerUsage.model, externalCalls: providerUsage.modelCalls,
+    ? { kind: 'Polza AI, manual run incomplete', model: providerUsage.model, externalCalls: providerUsage.modelCalls,
         costRub: providerUsage.costRub, costReported: providerUsage.costReported, budgetRub: providerUsage.budgetRub,
         sources: ['T08 classifyNews'] }
     : { kind: 'Polza AI, manual run', model: providerUsage.model, externalCalls: providerUsage.modelCalls,

@@ -1,5 +1,13 @@
 # Modular Studio test report
 
+## Latest fix verification — T08 timeouts, 2026-10-22
+
+Fixed pre-queue request timeouts, ignored Polza `reasoning_effort`, lost billing subtotal, and duplicate work on manual retries. Network timers now start at dispatch and cover body reads; actual provider replies are cached locally and clearly labelled for resume. Unknown-cost attempts are not automatically resent. See [module 02 details](docs/module-reports/02-news-intelligence.md).
+
+One new manual Chromium/Polza run on synthetic inputs completed T08 + T09 in **48 s**, with **19 calls**, **20,329 input / 2,320 output tokens**, **0.59243515 ₽**, unknown charges 0. A manual replay completed in **1 s**, **19 cache hits / 0 new calls / 0 ₽**. These were real stored provider replies, not fixture substitutions. No private company data was sent.
+
+`npm run test:all` passed; module 02's final tests (9 Python, 15 JS, 4 scenarios), build, and the nine-route/30-scenario Chromium E2E passed after the final metadata fixes. Product direct data-dependent E2E remains PARTIAL without configured company IDs. This is a transport execution verification, not an independent semantic-quality score. The older Round 5 results below are historical.
+
 ## Latest verification — round five, 2026-10-22
 
 **Verdict:** все девять отдельных модулей повторно открыты и проверены в Chromium; их Fixture-запуски и UI-наборы сценариев прошли. После исправления fail-closed поведения AI Agent прошли `npm run test:all` и `npm run test:e2e:studio`; прямой product E2E без локальных company IDs остался `PARTIAL`. Это подтверждает маршруты и сценарии, но не точность AI-ответов и не качество ранжирования без независимой разметки. Общая готовность продукта остаётся **PARTIAL**.

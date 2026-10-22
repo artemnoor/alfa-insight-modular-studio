@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { ModuleRunResponse, ModuleTestSuiteResponse } from '../contracts/module-api'
 import type { ReactNode } from 'react'
-import { moduleErrorMessage } from './moduleErrorMessage.js'
+import { moduleErrorMessage, providerUsageMessage } from './moduleErrorMessage.js'
 import './module-workbench.css'
 import './module-result.css'
 import './module-result-layout.css'
@@ -178,7 +178,7 @@ export function ModuleWorkbench({ spec }: Props) {
     setBusy('run'); setError(''); setTestRun(null); setResult(null)
     const controller = new AbortController()
     let timeoutTriggered = false
-    const timeoutMs = mode === 'external_ai' ? 190000 : 30000
+    const timeoutMs = mode === 'external_ai' ? (spec.id === 'news-intelligence' ? 315000 : 190000) : 30000
     const timeoutId = window.setTimeout(() => { timeoutTriggered = true; controller.abort() }, timeoutMs)
     try {
       const response = await fetch(`/api/modules/${spec.id}/run`, {
@@ -195,9 +195,7 @@ export function ModuleWorkbench({ spec }: Props) {
           ? body.error.detail
           : ''
         const publicMessage = safeNewsDetail || body.error?.message || `Ошибка API: ${response.status}`
-        const billing = usage
-          ? ` Внешних вызовов: ${usage.modelCalls ?? 0}; стоимость: ${usage.costReported ? `${usage.costRub} ₽` : 'не сообщена — проверьте кабинет провайдера перед повтором'}${usage.budgetRub ? ` при лимите ${usage.budgetRub} ₽` : ''}.`
-          : ''
+        const billing = providerUsageMessage(usage)
         throw new Error(publicMessage + billing)
       }
       setResult(body as ModuleRunResponse)
@@ -205,7 +203,7 @@ export function ModuleWorkbench({ spec }: Props) {
     } catch (caught) {
       if (timeoutTriggered) {
         setError(mode === 'external_ai'
-          ? 'Агент не вернул ответ за 190 секунд. Сервер может ещё завершать этот запуск; не отправляйте его повторно, пока он не освободится.'
+          ? `AI не вернул ответ за ${timeoutMs / 1000} секунд. Сервер может ещё завершать этот запуск; не отправляйте его повторно, пока он не освободится.`
           : 'Модуль не вернул ответ за 30 секунд. Проверьте доступность backend и повторите запуск.')
       } else setError(moduleErrorMessage(caught, 'Не удалось выполнить сценарий.'))
     } finally { window.clearTimeout(timeoutId); setBusy('') }

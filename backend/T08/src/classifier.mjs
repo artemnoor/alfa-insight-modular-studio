@@ -1,3 +1,4 @@
+import { fetchPolza } from '../../../shared/backend/polza_transport.mjs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { extractAndLinkEntities, entitiesConfig } from './entities.mjs'
@@ -70,16 +71,16 @@ function parseModelJson(content, operation) {
 async function requestApprovedJson({ model: requestedModel = model, system, user, maxTokens = 4096, timeoutMs = 90_000, operation }) {
   assertHackApprovedModel(requestedModel, operation || 'T08 model')
   if (!apiKey) throw new Error('Missing POLZA_AI_API_KEY (or POLZA_API_KEY)')
-  const response = await fetch(chatEndpoint(baseUrl), {
+  const response = await fetchPolza(chatEndpoint(baseUrl), {
     method: 'POST',
-    signal: AbortSignal.timeout(timeoutMs),
+    timeoutMs: timeoutMs,
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model: requestedModel,
       messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(user) }],
       response_format: { type: 'json_object' },
       include_reasoning: false,
-      reasoning_effort: 'none',
+      reasoning: { effort: 'none' },
       max_tokens: maxTokens,
     }),
   })
@@ -247,9 +248,9 @@ async function chooseChild({ state, task, question, options, parentPath }) {
     label: labelOf(node),
     ...(node.description ? { description: node.description } : {}),
   }))
-  const response = await fetch(endpoint, {
+  const response = await fetchPolza(endpoint, {
     method: 'POST',
-    signal: AbortSignal.timeout(45_000),
+    timeoutMs: 45_000,
     headers: {
       authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json',
@@ -268,7 +269,7 @@ async function chooseChild({ state, task, question, options, parentPath }) {
       ],
       response_format: { type: 'json_object' },
       include_reasoning: false,
-      reasoning_effort: 'none',
+      reasoning: { effort: 'none' },
       max_tokens: 1200,
     }),
   })
@@ -500,9 +501,9 @@ async function requestDeepSeekTopic(state, candidates) {
     modelProbability: candidate.modelProbability,
     articleSupportProbability: candidate.evidenceProbability,
   }))
-  const response = await fetch(topicEndpoint, {
+  const response = await fetchPolza(topicEndpoint, {
     method: 'POST',
-    signal: AbortSignal.timeout(90_000),
+    timeoutMs: 90_000,
     headers: {
       authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json',
@@ -518,7 +519,7 @@ async function requestDeepSeekTopic(state, candidates) {
       ],
       response_format: { type: 'json_object' },
       include_reasoning: false,
-      reasoning_effort: 'none',
+      reasoning: { effort: 'none' },
       max_tokens: 4096,
     }),
   })
@@ -875,9 +876,9 @@ async function requestTaxonomyChoice({ state, question, options, parentPath, top
 async function requestEventEvidenceReview(state, candidate) {
   const eventPath = candidate.path.map((step) => step.label).join(' > ')
   const description = candidate.node.description?.trim() || labelOf(candidate.node)
-  const response = await fetch(topicEndpoint, {
+  const response = await fetchPolza(topicEndpoint, {
     method: 'POST',
-    signal: AbortSignal.timeout(90_000),
+    timeoutMs: 90_000,
     headers: {
       authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json',
@@ -901,7 +902,7 @@ async function requestEventEvidenceReview(state, candidate) {
       ],
       response_format: { type: 'json_object' },
       include_reasoning: false,
-      reasoning_effort: 'none',
+      reasoning: { effort: 'none' },
       max_tokens: 4096,
     }),
   })

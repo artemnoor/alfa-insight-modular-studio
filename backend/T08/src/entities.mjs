@@ -1,3 +1,4 @@
+import { fetchPolza } from '../../../shared/backend/polza_transport.mjs'
 import { readFile } from 'node:fs/promises'
 import { assertHackApprovedModel, DEFAULT_HACK_MODEL } from '../../allowed-models.mjs'
 
@@ -1271,14 +1272,14 @@ r rows: [subject_id,predicate,object_id,event_id]. Use only explicit links and t
     ],
     response_format: { type: 'json_object' },
     include_reasoning: false,
-    reasoning_effort: 'none',
+    reasoning: { effort: 'none' },
     temperature: 0,
     max_tokens: Number.isInteger(sourceMetadata.diagnosticMaxTokens) ? Math.max(1000, Math.min(sourceMetadata.diagnosticMaxTokens, 8000)) : 3000,
   }
   try {
-    response = await fetch(chatEndpoint(baseUrl), {
+    response = await fetchPolza(chatEndpoint(baseUrl), {
       method: 'POST',
-      signal: AbortSignal.timeout(120_000),
+      timeoutMs: 120_000,
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
       body: JSON.stringify(requestBody),
     })

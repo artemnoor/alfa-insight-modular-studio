@@ -19,7 +19,7 @@ function renderResult(data: Record<string, any>) {
 
   return <>
     <div className="module-result-inline-note" role="status">
-      {live ? `Реальный ручной запуск через Polza AI (${liveUsage.model || 'модель не указана'}). Вызовов: ${liveUsage.modelCalls || 0}; стоимость: ${liveUsage.costReported ? `${liveUsage.costRub} ₽` : 'провайдер не сообщил'} при лимите ${liveUsage.budgetRub} ₽.` : local ? 'Локальный режим: T09 выполнил векторный поиск в архиве без AI. Классификация T08 в этом режиме не запускалась.' : 'Fixture-запуск: выполнены алгоритмы T08/T09, ответы модели синтетические, сетевые вызовы заблокированы. Эти результаты проверяют поток, но не качество модели.'}
+      {live ? `Реальный ручной запуск через Polza AI (${liveUsage.model || 'модель не указана'}). Новых вызовов: ${liveUsage.modelCalls || 0}; сохранённых ответов Polza: ${liveUsage.cacheHits || 0}; стоимость этого запуска: ${liveUsage.costReported ? `${liveUsage.costRub} ₽` : 'провайдер не сообщил'} при пороге ${liveUsage.budgetRub} ₽.` : local ? 'Локальный режим: T09 выполнил векторный поиск в архиве без AI. Классификация T08 в этом режиме не запускалась.' : 'Fixture-запуск: выполнены алгоритмы T08/T09, ответы модели синтетические, сетевые вызовы заблокированы. Эти результаты проверяют поток, но не качество модели.'}
     </div>
     <ResultMetrics items={[
       { label: 'T08', value: classificationReady ? 'Классификация выполнена' : data.t08Status === 'requires_external_ai' ? 'Нужен ручной AI-запуск' : 'Нужен текст от 20 символов' },
@@ -68,7 +68,7 @@ function renderResult(data: Record<string, any>) {
           <div className="module-result-card-top"><h4>{resultText(item.kind)} · {resultText(item.status)}</h4><ResultTag tone={item.status === 'supported' ? 'good' : item.status === 'unsupported' ? 'warn' : 'neutral'}>{item.quoteExact ? 'цитата найдена дословно' : 'цитата не подтверждена'}</ResultTag></div>
           <p>Утверждение: {resultText(item.assertion || item.candidateId)}</p><p>Причина: {resultText(item.reason)}</p>
         </article>} />
-        {t08.evidenceReview?.status && <p>Статус смысловой проверки: {t08.evidenceReview.status} · модельный этап в этой фикстуре не заменяет независимую экспертизу.</p>}
+        {t08.evidenceReview?.status && <p>Статус смысловой проверки: {t08.evidenceReview.status} · модельная проверка не заменяет независимую экспертизу.</p>}
       </ResultSection>
     </>}
 
@@ -101,6 +101,7 @@ export const moduleSpec: ModuleSpec = {
       { value: 'full', label: 'Полный текст' }, { value: 'excerpt', label: 'RSS-выдержка' }, { value: 'missing', label: 'Текст источника отсутствует' },
     ] },
     { name: 't09_candidates', label: 'Кандидаты событий T09 (JSON)', kind: 'json', rows: 7, placeholder: '[]' },
+    { name: 'retry_uncertain', label: 'Повтор запросов с неизвестной стоимостью', kind: 'select', initial: 'no', options: [{ value: 'no', label: 'Остановить повтор до проверки оплаты' }, { value: 'yes', label: 'Оплата проверена — разрешить повтор' }], externalOnly: true, helperText: 'Успешные ответы Polza переиспользуются 24 часа. Запрос с неизвестной оплатой повторяется только после явного выбора.' },
     { name: 'max_cost_rub', label: 'Порог расходов (₽, максимум 5)', kind: 'number', initial: '1', min: 0.05, max: 5, externalOnly: true, helperText: 'Останавливает следующие вызовы после полученного ответа. Уже отправленный запрос может превысить порог.' },
   ],
   highlights: [],

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, re, subprocess
+import json, re, subprocess, tempfile
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -98,17 +98,27 @@ def run_external(payload):
         "mode": "external_ai", "text": article,
         "metadata": {"content_status": payload.get("content_status") or "excerpt", "title": payload.get("title") or "", "date": payload.get("date") or ""},
         "t09Candidates": candidates[:10], "max_cost_rub": budget,
+        "retry_uncertain": payload.get("retry_uncertain", "no"),
     }
     runner = ROOT / "modules" / "02-news-intelligence" / "backend" / "run.mjs"
-    try:
-        result = subprocess.run(["node", str(runner)], input=json.dumps(value, ensure_ascii=False), capture_output=True,
-            text=True, encoding="utf-8", cwd=ROOT, timeout=180)
-    except subprocess.TimeoutExpired:
-        raise ExternalAIRunError(
-            "T08/T09 не ответил за 180 секунд. Стоимость завершённых запросов неизвестна; проверьте кабинет Polza перед повтором.",
-            "POLZA_RUN_TIMEOUT",
-            {"costReported": False, "budgetRub": budget},
-        )
+    # Checkpoint billing before/after every request so a killed child cannot
+    # erase the known subtotal from earlier paid answers.
+    with tempfile.TemporaryDirectory(prefix="alfa-t08-usage-") as folder:
+        journal = Path(folder) / "usage.json"
+        value["usagePath"] = str(journal)
+        try:
+            result = subprocess.run(["node", str(runner)], input=json.dumps(value, ensure_ascii=False), capture_output=True,
+                text=True, encoding="utf-8", cwd=ROOT, timeout=300)
+        except subprocess.TimeoutExpired:
+            try:
+                usage = json.loads(journal.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                usage = {}
+            usage.update({"costReported": False, "budgetRub": budget, "interrupted": True})
+            raise ExternalAIRunError(
+                "T08/T09 остановлен по общему сроку 300 секунд. Подтверждённые расходы сохранены; стоимость прерванного запроса может быть неизвестна. Успешные ответы доступны для продолжения.",
+                "POLZA_RUN_TIMEOUT", usage,
+            )
     if result.returncode:
         raise _runner_error(result)
     try:
