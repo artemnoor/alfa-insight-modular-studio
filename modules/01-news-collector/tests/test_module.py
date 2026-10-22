@@ -11,6 +11,12 @@ class IsolatedFixtureTests(unittest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertTrue(result)
 
+    def test_fixture_provenance_does_not_claim_the_live_feed_as_its_source(self):
+        result = _load("news-collector").run({})
+        self.assertEqual(result["provenance"]["kind"], "fixture RSS/XML")
+        self.assertEqual(result["provenance"]["sources"], ["RSS XML payload supplied to Fixture adapter"])
+        self.assertEqual(result["provenance"]["externalCalls"], 0)
+
     def test_malformed_fixture_xml_returns_a_safe_validation_message(self):
         with self.assertRaisesRegex(ValueError, "Не удалось прочитать RSS/XML") as caught:
             _load("news-collector").run({"rss_xml": "<rss><channel>"})

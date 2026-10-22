@@ -96,3 +96,16 @@ External запуск требует общего opt-in/key/allowlist и руч
 `npm run test:module -- evidence-verification` — **PASS**: 2 unit-теста и 3 fixture-сценария. Дополнительно живой UI подтвердил точную цитату, mismatch, неизвестный источник, смешанный `partial`, validation `NOT_EVALUATED`, invalid JSON и пустой claims. Это не покрывает смысловую применимость, числа или противоречия.
 
 Снимок UI: ![Синтетическая fixture проверка доказательств](assets/08-evidence-verification-retest.png).
+
+## Изолированный Chromium-ретест 22 октября 2026
+
+Маршрут проверен в отдельном свежем Chromium context на `/studio/evidence-verification`. Внешний режим не выбирался; в health API он отображался доступным по ручному действию, но ни одного provider request не отправлялось. В поля Local Data вводились только синтетические утверждение и источник.
+
+- `GET /api/modules/evidence-verification/health` и `/scenarios`, `POST /api/modules/evidence-verification/tests` вернули HTTP 200. Все три suite-сценария (`supported`, `mismatch`, `unknown-source`) получили PASS.
+- Запуск `supported` через форму вернул HTTP 200, `status=supported`, точный check `verified=true`, отсутствие `semanticReview`, provenance `synthetic source and claim`, `externalCalls=0`.
+- В `Local Data` переданы синтетическая цитата и документ. `POST /api/modules/evidence-verification/run` ответил HTTP 200 и вернул `status=supported`, точное совпадение `true`, `semanticReview` отсутствует, `externalCalls=0`; общий validator выставил `NOT_EVALUATED`, потому что произвольный локальный ввод не сопоставляется с эталонным fixture. Повтор вернул тот же verdict. Переключение режима очистило результат.
+- В поле JSON введён некорректный синтаксис. Форма показала понятное русское сообщение «Проверьте JSON…» до запроса к API; никаких некорректных данных в backend не отправлено.
+- Исправлена нейтральность предупреждения в `modules/08-evidence-verification/backend/evidence_core.py`: вместо неподтверждённого типа «PDF-фрагмент» используется «фрагмент источника». Новый unit-тест проверяет эту формулировку на синтетическом неизвестном/несовпадающем фрагменте. Также общий fetch-error переводчик покрывается тестом, который запускают команды всех модулей 07–09.
+- На 1440, 1280 и 390 px горизонтального переполнения нет. Артефакты содержат только synthetic fixture и синтетический Local Data: [fixture](assets/08-evidence-verification-round2-fixture.png), [локальная точная сверка синтетического источника](assets/08-evidence-verification-round2-local-synthetic.png).
+
+Команда `npm run test:module -- evidence-verification` проходит: 3 Python unit tests, 3 browser-independent helper tests и 3/3 fixture сценария. Остаточный риск: точное вхождение цитаты не подтверждает смысловую применимость, числа или отсутствие противоречий; ни Local Data, ни deterministic fixture это не оценивают. External semantic review намеренно не выполнялся.

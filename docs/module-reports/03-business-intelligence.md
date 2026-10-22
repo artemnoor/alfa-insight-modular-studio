@@ -103,3 +103,28 @@ npm run test:module -- business-intelligence
 - UI: `http://127.0.0.1:5173/studio/business-intelligence`, ручной Playwright-сеанс Chromium.
 - Локальный запуск: HTTP 200, `local_data`, `profileStatus=available`, `externalCalls=0`; опубликованы только суммарные счётчики без профиля.
 - Fixture-ошибка отсутствующего профиля и test suite: PASS; команда и исходники указаны выше.
+
+## Round 2: свежая проверка Chromium — Fixture only, 2026-10-22
+
+В отдельном Chromium-контексте проверен маршрут `http://127.0.0.1:5173/studio/business-intelligence`. Только синтетические Fixture CSV использованы для запусков. Local Data не запускался, исходные профили/связи/платежи не читались в рамках этого прохода, graph rebuild не запрашивался; External AI не вызывался.
+
+### Владелец, зависимости, вход/выход
+
+Каноническое ядро — `modules/03-business-intelligence/backend/business_graph.py`. `drive_data_analysis_2026-10-20/business_graph.py` — compatibility import к модульному владельцу. `modules/03-business-intelligence/backend/adapter.py` — интерфейс API к одному graph builder, а frontend — `modules/03-business-intelligence/frontend/ModulePage.tsx`. Fixture генерирует обезличенные CSV профилей, связей физических лиц и платежей во временном каталоге, временную SQLite и вызывает `ensure_database(force=True)` плюс `get_company_network`; файлы удаляются при завершении. В Local Data тот же graph builder читает настроенные CSV и может обновить derived SQLite cache; в External AI `run_local` готовит ограниченный whitelist-профиль/агрегаты/количества связей для ручной интерпретации. Эти два режима по данным в этом прогоне не запускались.
+
+API v1: `GET /api/modules/business-intelligence/health`, `/scenarios`, `POST /run`, `/tests`. Для Fixture передаются `mode=fixture`, `scenarioId` и `input.company_id`/`unknown_company`. Успешный контракт содержит `status`, `data` (`profileStatus`, профиль, агрегаты, связи, ограниченный граф, importStats, ограничения) и `provenance`; неизвестная компания корректно становится `missing_profile`, а произвольный запуск без oracle — `NOT_EVALUATED`, не ложный PASS.
+
+### Фактические проверки
+
+- Сценарий «Профиль и связи» → `POST /run` HTTP 200 / `validation=PASS`; результат полностью синтетический, `provenance.kind=synthetic CSV fixtures`, пишет только temporary data. UI показывает fixture-профиль, агрегаты, отношения, узлы/рёбра и предупреждение, что платёж не доказывает поставку, а общий GROUP_ID не доказывает контроль.
+- `Запустить 3 теста`: HTTP 200, `PASS`: `success`, `unknown`, `empty-id`.
+- После результата смена сценария сразу очистила карточку; смена режима на Local Data также очистила результат и набор тестов. Режим переключён назад, но Local Data-запуск не делался.
+- Подготовленный сценарий `unknown` → HTTP 200 / PASS ожидаемого `missing_profile`. Произвольный синтетический ID без профиля → HTTP 200 / `NOT_EVALUATED`, `profileStatus=missing_profile`; произвольный неизвестный scenario ID → HTTP 400 `SCENARIO_NOT_FOUND`.
+- GET health/scenarios → 200. На 1440, 1280 и 390 px горизонтального переполнения нет (`scrollWidth == viewport`); ошибки страницы отсутствовали.
+- `npm run test:module -- business-intelligence`: PASS — 3 Python tests и 3 prepared scenarios.
+
+### Наблюдение по представлению
+
+Свежий синтетический результат вновь подтвердил уже указанную выше проблему P2: числовые платежные суммы видны в основных карточках без единицы и периода; оговорку `payment_unit` можно найти только в полном техническом результате. В этом проходе бизнес-правила не менялись. Рекомендация остаётся: показывать прямо у сумм единицы исходного поля и явно указывать неизвестные валюту/период. Нет графовой визуализации, хотя графические узлы и рёбра присутствуют в API; на узком экране это становится длинным списком.
+
+![Синтетический Business Intelligence результат, Chromium, 1440 px](assets/03-business-intelligence-round2-fixture.png)

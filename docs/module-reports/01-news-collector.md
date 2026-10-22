@@ -103,3 +103,28 @@ Live-запрос принимает ключ источника из allowlist,
 - Предыдущий успешный fixture-скриншот: [01-news-collector-fixture.png](assets/01-news-collector-fixture.png).
 - Live RSS: один GET к CBR в исходном проходе, результат `ok`, 13 найдено / 13 повторов, локально отображалось 14 публикаций.
 - Открытая публикация: [Банк России — «Отозвана лицензия на осуществление банковских операций у ООО НКО „Тайдон“»](https://www.cbr.ru/press/PR/?file=639282394585722382BANK_SECTOR.htm).
+
+## Повторный Chromium-проход — 2026-10-22, Fixture only
+
+Проверен актуальный маршрут `http://127.0.0.1:5173/studio/news-collector` в отдельном Chromium-контексте. Vite отвечает на `5173`, его API proxy ведёт на `127.0.0.1:8097`; health и каталоги отвечали HTTP 200. По правилам этого прохода Live RSS не запускался повторно: ранее разрешённый запрос уже есть в истории отчёта. При открытии экран выбрал `Live RSS — ручной сбор`, но до нажатия кнопки сетевой сбор не начинался; я переключил режим на `Fixture`.
+
+### Владелец, исполнение и контракты
+
+Единственный владелец сбора/разбора/дедупликации — `modules/01-news-collector/backend/news_collector.py`; старый `drive_data_analysis_2026-10-20/news_collector.py` — тонкая совместимая обёртка. `adapter.py` в Fixture передаёт XML в `parse_rss`, создаёт SQLite во временной папке, запускает тот же `_upsert_item` и возвращает список, качество и происхождение до удаления временной папки. Внешний вызов Live RSS отделён в `run_live`; T08/T09 здесь не вызываются.
+
+Использованные API: `GET /health`, `/scenarios`, `/sources`, `POST /run` и `/tests` под `/api/modules/news-collector/`. На run передаются `mode`, необязательный `scenarioId` и XML/параметры в `input`; успех возвращает `contractVersion`, `mode`, `status`, `data`, `provenance` и `validation`. Источники Live RSS ограничены allowlist; они не могут быть заменены произвольным URL.
+
+### Фактические результаты
+
+- Fixture «RSS и повтор»: `POST /run` → HTTP 200, `validation=PASS`, 2 публикации, 2 новых, 1 повтор. В UI видны даты/отсутствие даты, обе записи маркированы RSS-выдержками, есть переход к оригиналу. Provenance указывает временную SQLite и `externalCalls=0`.
+- Кнопка `Запустить 3 теста`: HTTP 200, общий `PASS`; `success`, `empty`, `missing-date` — все PASS.
+- Сразу после результата сменил сценарий: результат очистился. Перешёл в Live RSS и обратно в Fixture: состояние осталось чистым.
+- В «Своих данных» отправил malformed XML `<rss><channel><item>`: HTTP 400 `INVALID_INPUT`; UI показал короткое сообщение о структуре RSS/XML, без traceback. Прямой вызов неизвестного scenario ID вернул HTTP 400 `SCENARIO_NOT_FOUND`.
+- На ширинах 1440, 1280 и 390 px `documentElement.scrollWidth` совпал с шириной viewport; ошибок страницы нет.
+- `npm run test:module -- news-collector`: PASS, 8 Python-тестов и 3 prepared scenarios. Публичный RSS в ходе этого повторного прохода не запрашивался.
+
+### Обнаружение и исправление provenance
+
+В первом HTTP-ответе Fixture поля `kind=synthetic RSS` и `externalCalls=0` сопровождались `sources=[https://www.cbr.ru/rss/RssPress]`, хотя XML был fixture-вводом и сетевого запроса не было. Это могло создать неверное впечатление о происхождении данных. Исправлено только описание provenance в `modules/01-news-collector/backend/adapter.py`: Fixture теперь называет payload источником и не приписывает ему реальный URL; добавлен unit-тест. Парсер, дедупликация и feed-профиль не менялись. После изменения модульные 8 Python-тестов прошли. Дополнительный свежий Chromium POST подтвердил HTTP 200 и новое тело: `kind=fixture RSS/XML`, `sources=["RSS XML payload supplied to Fixture adapter"]`, `writes=temporary SQLite only`, `externalCalls=0`; footer UI отображает тот же тип. Перезапуск backend не потребовался, поскольку API динамически загружает адаптер.
+
+![Fixture-результат News Collector, Chromium, 1440 px](assets/01-news-collector-round2-fixture.png)

@@ -32,5 +32,5 @@ def _verify_support(
         if quote_ok:
             verified.append({**item, "source": source})
         else:
-            warnings.append(f"Цитата модели не прошла точную сверку с PDF-фрагментом {source_id or '(ID отсутствует)'}; не показываем её как тезис Альфа-Банка.")
+            warnings.append(f"Цитата модели не прошла точную сверку с фрагментом источника {source_id or '(ID отсутствует)'}; не показываем её как тезис Альфа-Банка.")
     return verified, checks, warnings

@@ -55,3 +55,20 @@ Screenshot: [`assets/06-bank-research-retest.png`](assets/06-bank-research-retes
 4. **External-data boundary — External AI interpretation sends bank material.** `run_external` transmits the query and up to five retrieved fragments (up to 3,000 characters each) to Polza. The UI discloses this scope and requires a manual action. No fragments were sent in this retest. Keep the manual gate and show each outgoing fragment’s source/approval before sending confidential or licensed content.
 
 The earlier finding that changing modes retains a stale result is **resolved in the shared ModuleWorkbench**. Reproduced this time: switching Fixture → Local Data removed the old fixture result before the local run.
+
+## Fresh round-two execution (2026-10-22)
+
+Opened `/studio/bank-research` in a new Chromium context and interacted through the UI. No External AI request was made. The Local Data result was inspected only for status, count and provenance; document fragments were not copied into this report or captured in screenshots.
+
+| Check | Result |
+|---|---|
+| Health and scenarios | `GET /health`, `GET /scenarios` — HTTP 200; backend available and 3 scenarios loaded. |
+| Fixture normal and repeat | Two UI launches of the successful fixture returned HTTP 200 / `PASS`; synthetic provenance and `externalCalls=0`, one synthetic match each. |
+| Fixture test suite | UI `POST /tests` — HTTP 200 / `PASS`; `success`, `empty`, `irrelevant` all passed. Separately ran `irrelevant`, which returned `no_relevant_material`, zero matches, HTTP 200 / `PASS`. Changing scenario cleared the previous result before the next run. |
+| Local validation error | Switched to Local Data, cleared the query and ran: HTTP 400 `INVALID_INPUT`, UI displayed “Введите поисковый запрос.”, `externalCalls=0`. |
+| Read-only Local BM25 | Entered a query and ran the actual configured index: HTTP 200, 5 matches, validation `NOT_EVALUATED`, provenance `local bank knowledge index (read only)`, `externalCalls=0`, `writes=none`. No result title or fragment text is reproduced here. |
+| Responsive layout | At 1440, 1280 and 390 px, document width equalled viewport width; no horizontal overflow. Chromium page errors: 0. |
+
+`npm run test:module -- bank-research` exited 0: 6 Python tests and all 3 fixture scenarios passed. Fresh screenshots show synthetic Fixture results only: [1440 px](assets/06-bank-research-round2-desktop.png), [390 px](assets/06-bank-research-round2-mobile.png). No screenshot was taken in Local Data mode.
+
+**Fresh status:** Fixture `PASS`; Local BM25 retrieval `PARTIAL` because the search executed read-only but has no independent semantic relevance labels and returned `NOT_EVALUATED`; empty-query error `PASS`; External AI `NOT RUN`. `modules/06-bank-research/backend/stage2_rag.py` remains the sole owner of BM25 retrieval, with adapter/UI/API at `adapter.py`, `ModulePage.tsx`, and shared contract v1. Fixture builds an in-memory synthetic index; Local Data reads the configured knowledge index without writes; External AI remains a separate manual path that can send the query and up to five retrieved fragments. Missing-index recovery, semantic entailment and the document catalog/open-source flow remain unverified/open as described above.

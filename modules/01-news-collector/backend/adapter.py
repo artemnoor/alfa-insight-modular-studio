@@ -61,7 +61,7 @@ def run(payload):
         rows = collector.list_news(100, db)
     return {"source": feed.feed_name, "feedKey": feed.key, "fetched": len(items), "inserted": inserted, "duplicates": duplicates,
             "quality": {"missingDate": sum(not x["published_at"] for x in rows), "excerptCount": sum(x["content_status"] == "excerpt" for x in rows), "fullCount": sum(x["content_status"] == "full" for x in rows)},
-            "items": rows, "provenance": {"kind": "synthetic RSS", "sources": [feed.feed_url], "writes": "temporary SQLite only", "externalCalls": 0}}
+            "items": rows, "provenance": {"kind": "fixture RSS/XML", "sources": ["RSS XML payload supplied to Fixture adapter"], "writes": "temporary SQLite only", "externalCalls": 0}}
 
 
 def run_live(payload, *, fetcher=collector.fetch_feed, db_path=None):

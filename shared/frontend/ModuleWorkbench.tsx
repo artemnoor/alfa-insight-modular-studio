@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { ModuleRunResponse, ModuleTestSuiteResponse } from '../contracts/module-api'
 import type { ReactNode } from 'react'
+import { moduleErrorMessage } from './moduleErrorMessage.js'
 import './module-workbench.css'
 import './module-result.css'
 import './module-result-layout.css'
@@ -181,7 +182,7 @@ export function ModuleWorkbench({ spec }: Props) {
         setError(mode === 'external_ai'
           ? 'Агент не вернул ответ за 190 секунд. Сервер может ещё завершать этот запуск; не отправляйте его повторно, пока он не освободится.'
           : 'Модуль не вернул ответ за 30 секунд. Проверьте доступность backend и повторите запуск.')
-      } else setError(caught instanceof Error ? caught.message : 'Не удалось выполнить сценарий.')
+      } else setError(moduleErrorMessage(caught, 'Не удалось выполнить сценарий.'))
     } finally { window.clearTimeout(timeoutId); setBusy('') }
   }
 
@@ -192,7 +193,7 @@ export function ModuleWorkbench({ spec }: Props) {
       const body = await response.json()
       if (!response.ok) throw new Error(body.error?.message || `Ошибка API: ${response.status}`)
       setTestRun(body as ModuleTestSuiteResponse)
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Не удалось выполнить проверки.') }
+    } catch (caught) { setError(moduleErrorMessage(caught, 'Не удалось выполнить проверки.')) }
     finally { setBusy('') }
   }
 

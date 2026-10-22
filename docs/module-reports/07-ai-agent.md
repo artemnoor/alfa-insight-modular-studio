@@ -98,3 +98,17 @@ External запуск блокируется, если не выполнены o
 | 1440 / 1280 / 390 px | `PASS` | Нет горизонтального переполнения на всех трёх ширинах. |
 
 Общий статус остаётся `PARTIAL`: фикстура проверяет реальный локальный orchestration-код на детерминированных ответах, но не качество live-модели; также сохраняются ограничения истории и временная доступность API при соседнем долгом запросе.
+
+## Изолированный Chromium-ретест 22 октября 2026
+
+Повторный запуск выполнен в отдельном свежем Chromium context для модуля 07; использовались `http://127.0.0.1:5173/studio/ai-agent` и локальный API `8097`. Серверы не перезапускались. Провайдерские запросы не отправлялись. В health ответе API присутствовали `available=true`, `localDataAvailable=true` и `externalAiRequiresManualRun=true`; внешний режим не выбирался.
+
+- `GET /api/modules/ai-agent/health`, `/scenarios`, `/options` и `POST /api/modules/ai-agent/tests` ответили HTTP 200. Набор показал PASS для 4/4 (`success`, `adaptive-replan`, `question-empty`, `fixture-cost`).
+- В сценарии `adaptive-replan` `POST /api/modules/ai-agent/run` ответил HTTP 200, validation `PASS`. UI показал две версии плана, четыре запланированных инструмента, три выполненных (`get_company_profile`, `get_event_facts`, `search_bank_research`) и пропущенный `verify_evidence` с объяснением. Выполнение завершилось со статусом `complete`, выводом `unclear`, стоимостью 0 ₽, `externalCalls=0` и provenance `deterministic model-response fixture`. Это прогон существующего `run_agent` с детерминированным транспортом и fixture-инструментами; он не является проверкой live-модели или рабочего RAG.
+- Повтор того же fixture-запуска вернул HTTP 200 и добавил сравнение с предыдущим запуском текущей сессии. Переключение на `Local Data` очистило результат и показало поля выбора локальных входов. В этой сессии профиль/событие не выбирались и локальный запуск не отправлялся.
+- Для проверки отказа сети один fixture POST был прерван Playwright route handler. Сначала Chromium показал английский `Failed to fetch`. После добавления общего сообщения ошибки повторный отказ показывает русское «Не удалось связаться с backend модуля…»; следующий обычный fixture запуск восстановился с HTTP 200. Прерванный запрос был только локальным fixture POST, не вызовом внешней модели.
+- На 1440, 1280 и 390 px `documentElement.scrollWidth == clientWidth`; горизонтального переполнения нет. Браузерный screenshot содержит только fixture данные: [план агента и результаты синтетического запуска](assets/07-ai-agent-round2-fixture.png).
+
+Исправлены связанные с этим проходом UX-дефекты: сетевые ошибки `fetch` переводятся в адресное русское сообщение в `shared/frontend/ModuleWorkbench.tsx` через `shared/frontend/moduleErrorMessage.js`; покрытие — `shared/frontend/tests/module-error-message.test.mjs`. Команда `npm run test:module -- ai-agent` теперь запускает этот общий UI-helper test. Сам API timeout оставлен отдельным сообщением с запретом повторно отправлять занятый запуск.
+
+Итог `PARTIAL`: тестируется реальный orchestration flow и локальное представление плана, но не проверяются качество Polza, расходы, ошибки внешнего провайдера или реального RAG; постоянная история Studio-запусков также не подтверждена.
