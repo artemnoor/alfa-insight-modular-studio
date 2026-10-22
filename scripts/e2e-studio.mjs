@@ -198,7 +198,6 @@ try {
     if (!chatText.trim()) throw new Error('Локальный чат не вернул ответ.')
     await page.locator('.insight-history summary').click()
     await page.locator('.insight-history-item').first().waitFor({ timeout: 10000 })
-    await page.screenshot({ path: path.join(out,'product-local-data.png'), fullPage: true })
     await page.locator('.insight-company-trigger').click()
     await page.locator('#insight-company-search').fill(localCompanyB)
     await page.locator('.insight-company-options [role="option"]').filter({ hasText: localCompanyB }).first().click()
@@ -207,7 +206,7 @@ try {
     if (!switchedCompany.includes(localCompanyB) || !page.url().includes(`company=${localCompanyB}`)) throw new Error('Переключение компании не обновило контекст продукта и URL.')
     await page.locator('.insight-company-context').waitFor()
     if (!(await page.locator('.insight-company-context').innerText()).includes(localCompanyB)) throw new Error('Карточка события осталась привязана к предыдущей компании.')
-    results.push({ slug: 'product-direct', status: 'PASS', companyId: selectedCompany, eventTitle, sourceLinks, researchMode: 'local_demo', chat: 'PASS', history: 'PASS', companySwitch: 'PASS', switchedCompany })
+    results.push({ slug: 'product-direct', status: 'PASS', selectedProfile: Boolean(selectedCompany), eventOpened: Boolean(eventTitle), sourceLinks, researchMode: 'local_demo', chat: 'PASS', history: 'PASS', companySwitch: Boolean(switchedCompany) ? 'PASS' : 'FAIL' })
   }
   const mobile = await context.newPage()
   await mobile.setViewportSize({ width: 390, height: 844 })
@@ -242,7 +241,15 @@ try {
     await mobile.locator('.insight-event-title').waitFor({ timeout: 30000 })
     productMobileWidth = await mobile.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
     if (productMobileWidth.content > productMobileWidth.viewport) throw new Error(`Мобильный клиентский продукт переполняет ширину: ${JSON.stringify(productMobileWidth)}`)
-    await mobile.screenshot({ path: path.join(out,'product-mobile-390.png'), fullPage: true })
+    await mobile.locator('.insight-workspace.is-mobile-detail').waitFor()
+    await mobile.locator('.insight-company-trigger').click()
+    await mobile.locator('#insight-company-search').fill(localCompanyB)
+    await mobile.locator('.insight-company-options [role="option"]').filter({ hasText: localCompanyB }).first().click()
+    await mobile.locator('.insight-event-card').first().waitFor({ timeout: 30000 })
+    await mobile.locator('.insight-workspace:not(.is-mobile-detail)').waitFor({ timeout: 5000 })
+    if (await mobile.locator('.insight-event-title').isVisible()) throw new Error('После переключения компании мобильный продукт оставил пользователя в панели события.')
+    productMobileWidth = await mobile.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
+    if (productMobileWidth.content > productMobileWidth.viewport) throw new Error(`Мобильная лента после переключения компании переполняет ширину: ${JSON.stringify(productMobileWidth)}`)
   }
   console.log(JSON.stringify({ status: 'PASS', cards, results, mobileWidth, newsIntelligenceMobileWidth, moduleMobileWidth, comparisonWidth, productMobileWidth, errors, screenshots: out }, null, 2))
   if (errors.length) process.exitCode = 1

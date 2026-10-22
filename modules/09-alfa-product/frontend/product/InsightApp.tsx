@@ -262,6 +262,7 @@ export default function InsightApp() {
     setCompanyPickerOpen(false)
     setCompanySearch('')
     setEventSearch('')
+    setMobileDetail(false)
     setHistory({ research: [], messages: [] })
     setMessages([])
     setResearchResult(null)

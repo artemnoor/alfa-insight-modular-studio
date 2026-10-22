@@ -1,18 +1,18 @@
 # Отчёты по модулям Alfa Insight
 
-Отчёты основаны на ручном проходе UI в Chromium, проверках API/фикстур и чтении владельцев алгоритмов. Fixture suites всех девяти модулей запускались командами проекта; внешний AI запускался только вручную на синтетических данных в модуле 02.
+Отчёты основаны на ручном проходе UI в Chromium, проверках API/фикстур и чтении владельцев алгоритмов. Fixture suites всех девяти модулей запускались командами проекта; платные внешние AI вызовы запускались вручную только на синтетической публикации в модуле 02 и в одном ранее разрешённом Impact Analysis тесте.
 
 | № | Модуль | Итог | Отчёт |
 |---|---|---|---|
 | 01 | News Collector | PASS: 3/3 fixtures, malformed XML handled; настоящая CBR RSS fetch была в предыдущем проходе; в этом раунде повторён fixture без сети | [01 — News Collector](01-news-collector.md) |
 | 02 | News Intelligence / T08/T09 | PARTIAL: реальный T08/T09 на synthetic news стоил 0.9054272 ₽; 15 provider calls; T08 extraction incomplete, T09 сравнил near-duplicate; жёсткого spend cap нет | [02 — News Intelligence](02-news-intelligence.md) |
-| 03 | Business Intelligence | PARTIAL: Fixture и 3/3 сценария PASS; UI показывает единицы `PAY_AMT` и неизвестные валюту/период; Local Data happy path пропущен из-за возможной записи кэша | [03 — Business Intelligence](03-business-intelligence.md) |
-| 04 | Personalization | PARTIAL: 3/3 сценария PASS; мобильное сравнение исправлено и проверено 326/326 px; Local Data пропущен из-за возможной перестройки SQLite; нет gold-разметки | [04 — Personalization](04-personalization.md) |
-| 05 | Impact Analysis | PARTIAL: 3/3 fixtures PASS; профиль и событие локально загружались без запуска AI (`analysisStatus=not_run`); полный impact/External AI не проверены | [05 — Impact Analysis](05-impact-analysis.md) |
-| 06 | Bank Research / RAG | PARTIAL: 3/3 fixtures PASS, локальный read-only BM25 вернул пять совпадений; применимость и релевантность не размечены независимым эталоном | [06 — Bank Research](06-bank-research.md) |
-| 07 | AI Agent Studio | PARTIAL: настоящий orchestrator показал перепланирование и 3 фактических вызова из 4 planned; 4/4 fixtures PASS; внешний агент не запускался | [07 — AI Agent Studio](07-ai-agent.md) |
-| 08 | Evidence Verification | PARTIAL: 4/4 fixtures PASS; пустой ввод теперь `unclear`, duplicate React key исправлен; числовая/смысловая сверка остаётся отсутствующей | [08 — Evidence Verification](08-evidence-verification.md) |
-| 09 | Alfa Insight Product | PARTIAL: Studio fixture 3/3 PASS и общий путь продуктовыми маршрутами открыт; безопасный синтетический profile/feed fixture отсутствует; chat/deep research не запускались в этом раунде | [09 — Alfa Insight Product](09-alfa-product.md) |
+| 03 | Business Intelligence | PARTIAL: Fixture 3/3 и живой read-only профиль/граф проверены; рисунок графа, концентрации и пропуски отображаются; External AI не запускался | [03 — Business Intelligence](03-business-intelligence.md) |
+| 04 | Personalization | PARTIAL: Local Data прогнал одинаковые 20 событий для двух профилей; различие объяснений видно; независимой gold-разметки качества нет | [04 — Personalization](04-personalization.md) |
+| 05 | Impact Analysis | PARTIAL: live Local Data загрузил профиль/событие без подмены анализа (`not_run`); один ранее разрешённый AI-ответ дал `unclear`; внешний адаптер обходит канонический RAG | [05 — Impact Analysis](05-impact-analysis.md) |
+| 06 | Bank Research / RAG | PARTIAL: Local Data вернул 5 слабых лексических совпадений и 0 по бессмысленному запросу; независимой оценки применимости нет | [06 — Bank Research](06-bank-research.md) |
+| 07 | AI Agent Studio | PARTIAL: orchestrator пересмотрел план и показал 3 фактических вызова из 4 запланированных; 4/4 fixtures; только синтетические ответы инструментов | [07 — AI Agent Studio](07-ai-agent.md) |
+| 08 | Evidence Verification | PARTIAL: 4/4 fixtures; пустой ввод `unclear`; проценты сверяются и конфликт 19%/12% возвращает `unsupported`; прочая смысловая/числовая верификация открыта | [08 — Evidence Verification](08-evidence-verification.md) |
+| 09 | Alfa Insight Product | PARTIAL: live локальная лента/событие/источники проверены; мобильное переключение компании исправлено; chat/deep research в этом раунде не запускались | [09 — Alfa Insight Product](09-alfa-product.md) |
 
 ## Скриншоты
 
@@ -38,6 +38,8 @@
 - [Round-three AI Agent](assets/07-ai-agent-round3-fixture-desktop.png), [mobile](assets/07-ai-agent-round3-fixture-mobile.png)
 - [Round-three Evidence Verification supported](assets/08-evidence-verification-round3-supported.png), [empty input after fix](assets/08-evidence-verification-round3-empty-after-fix.png), [repeated-source partial after fix](assets/08-evidence-verification-round3-partial-fixed.png), [numeric mismatch](assets/08-evidence-verification-round3-number-fixture.png)
 - [Round-three Alfa Product Studio fixture](assets/09-alfa-product-round3-studio-fixture.png)
+- [Round-four Business Intelligence graph, desktop](assets/03-business-intelligence-round4-fixture-graph-desktop.png), [mobile](assets/03-business-intelligence-round4-fixture-graph-mobile.png)
+- [Round-four Evidence Verification percentage conflict handling](assets/08-evidence-verification-round4-numeric-conflict.png)
 - [Business Intelligence retest](assets/03-business-intelligence-retest.png)
 - [Personalization retest](assets/04-personalization-retest.png)
 - [Impact Analysis retest](assets/05-impact-analysis-retest.png)

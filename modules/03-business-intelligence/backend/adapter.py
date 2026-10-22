@@ -1,13 +1,23 @@
 from __future__ import annotations
 import csv, sys, tempfile
 from pathlib import Path
+from threading import RLock
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "drive_data_analysis_2026-10-20"))
 import business_graph as graph
 sys.path.insert(0, str(ROOT / "shared" / "backend"))
 from polza_client import chat_json
 
+_GRAPH_ACCESS_LOCK = RLock()
+
 def run(payload):
+    # Fixture execution temporarily swaps the graph core's process-wide input
+    # paths. Serialize it with local reads so concurrent API requests cannot
+    # observe the temporary fixture paths.
+    with _GRAPH_ACCESS_LOCK:
+        return _run_fixture(payload)
+
+def _run_fixture(payload):
     company_id = "U_UNKNOWN" if payload.get("unknown_company") else str(payload.get("company_id") or "U_FIXTURE")
     profiles = [dict.fromkeys(graph.PROFILE_COLUMNS, ""), dict.fromkeys(graph.PROFILE_COLUMNS, "")]
     profiles[0].update({"SYNTHETIC_U":"U_FIXTURE","GROUP_ID":"G_FIXTURE","MAINOKVED_CODE":"42.99","MAINOKVED_NAME":"Строительство прочих инженерных сооружений","REGION":"Москва","CL_PRODUCT_LOA_MARK":"1.0"})
@@ -32,13 +42,14 @@ def run(payload):
     return {"companyId":company_id,"profileStatus":result.get("profile_status"),"profile":result.get("profile"),"metrics":result.get("metrics"),"directConnections":result.get("direct_connections"),"graph":result.get("graph"),"importStats":{k:imported.get(k) for k in ("profile_rows","person_link_rows","payment_rows","company_nodes")},"interpretationLimitations":result.get("limitations",[]),"provenance":{"kind":"synthetic CSV fixtures","sources":["business_graph.ensure_database","business_graph.get_company_network"],"writes":"temporary only"}}
 
 def run_local(payload):
-    company_id=str(payload.get("company_id") or "U_9250")
-    imported=graph.ensure_database()
-    try:
-        result=graph.get_company_network(company_id)
-    except KeyError as exc:
-        raise ValueError("Компания не найдена или её профиль неоднозначен в локальных источниках.") from exc
-    return {"companyId":company_id,"profileStatus":result.get("profile_status"),"profile":result.get("profile"),"metrics":result.get("metrics"),"directConnections":result.get("direct_connections"),"graph":result.get("graph"),"importStats":{k:imported.get(k) for k in ("profile_rows","person_link_rows","payment_rows","company_nodes")},"interpretationLimitations":result.get("limitations",[]),"provenance":{"kind":"local source CSVs (read only)","sources":["business_graph.ensure_database","business_graph.get_company_network"],"writes":"derived SQLite cache in this workspace only"}}
+    with _GRAPH_ACCESS_LOCK:
+        company_id=str(payload.get("company_id") or "U_9250")
+        imported=graph.ensure_database()
+        try:
+            result=graph.get_company_network(company_id)
+        except KeyError as exc:
+            raise ValueError("Компания не найдена или её профиль неоднозначен в локальных источниках.") from exc
+        return {"companyId":company_id,"profileStatus":result.get("profile_status"),"profile":result.get("profile"),"metrics":result.get("metrics"),"directConnections":result.get("direct_connections"),"graph":result.get("graph"),"importStats":{k:imported.get(k) for k in ("profile_rows","person_link_rows","payment_rows","company_nodes")},"interpretationLimitations":result.get("limitations",[]),"provenance":{"kind":"local source CSVs (read only)","sources":["business_graph.ensure_database","business_graph.get_company_network"],"writes":"derived SQLite cache in this workspace only"}}
 
 def run_external(payload):
     result = run_local(payload)

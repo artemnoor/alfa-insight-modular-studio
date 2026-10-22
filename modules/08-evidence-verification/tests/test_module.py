@@ -34,5 +34,28 @@ class IsolatedFixtureTests(unittest.TestCase):
         self.assertIn("фрагментом источника", warnings[0])
         self.assertNotIn("PDF", warnings[0])
 
+    def test_exact_quote_does_not_support_conflicting_percentage(self):
+        verified, checks, warnings = evidence_core._verify_support(
+            [{"source_id": "synthetic-source", "claim": "Выручка выросла на 19 процентов.",
+              "quote": "Отчетная выручка организации увеличилась на 12 процентов за период."}],
+            [{"chunk_id": "synthetic-source", "text": "Отчетная выручка организации увеличилась на 12 процентов за период."}],
+        )
+        self.assertEqual(verified, [])
+        self.assertTrue(checks[0]["quote_present"])
+        self.assertFalse(checks[0]["numeric_consistent"])
+        self.assertFalse(checks[0]["verified"])
+        self.assertIn("Процент", warnings[0])
+
+    def test_matching_percentage_remains_supported(self):
+        verified, checks, warnings = evidence_core._verify_support(
+            [{"source_id": "synthetic-source", "claim": "Выручка выросла на 12 процентов.",
+              "quote": "Отчетная выручка организации увеличилась на 12 процентов за период."}],
+            [{"chunk_id": "synthetic-source", "text": "Отчетная выручка организации увеличилась на 12 процентов за период."}],
+        )
+        self.assertEqual(len(verified), 1)
+        self.assertTrue(checks[0]["quote_present"])
+        self.assertTrue(checks[0]["numeric_consistent"])
+        self.assertEqual(warnings, [])
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,21 @@
 import { ModuleWorkbench, type ModuleSpec } from '../../../shared/frontend/ModuleWorkbench'
 import { ResultList, ResultMetrics, ResultSection, ResultTag, asRows, resultText } from '../../../shared/frontend/ModuleResult'
 
+function formatPublishedAt(value: unknown) {
+  const raw = resultText(value)
+  const timestamp = Date.parse(raw)
+  if (!Number.isFinite(timestamp)) return raw
+  return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(timestamp)
+}
+
+function isSyntheticFixtureUrl(value: unknown) {
+  try {
+    return new URL(String(value)).hostname === 'fixture.invalid'
+  } catch {
+    return false
+  }
+}
+
 function renderResult(data: Record<string, any>) {
   const items = asRows(data.items)
   return <>
@@ -8,9 +23,9 @@ function renderResult(data: Record<string, any>) {
     {data.error && <p className="module-result-inline-note">Источник вернул ошибку: {resultText(data.error)}</p>}
     <ResultSection title="Публикации">
       <ResultList items={items} empty="В RSS-ленте публикаций нет." renderItem={item => <article className="module-result-card">
-        <div className="module-result-card-top"><h4>{resultText(item.title, 'Без заголовка')}</h4><div className="module-result-tags"><ResultTag tone={item.content_status === 'full' ? 'good' : 'warn'}>{item.content_status === 'full' ? 'Полный текст' : 'RSS-выдержка'}</ResultTag>{item.published_at && <ResultTag>{resultText(item.published_at)}</ResultTag>}</div></div>
+        <div className="module-result-card-top"><h4>{resultText(item.title, 'Без заголовка')}</h4><div className="module-result-tags"><ResultTag tone={item.content_status === 'full' ? 'good' : 'warn'}>{item.content_status === 'full' ? 'Полный текст' : 'RSS-выдержка'}</ResultTag>{item.published_at && <ResultTag>{formatPublishedAt(item.published_at)}</ResultTag>}</div></div>
         <p>{resultText(item.content || item.summary, 'Текст публикации отсутствует.')}</p>
-        <p>{resultText(item.source_name || item.source || data.source)}{item.url && <> · <a href={item.url} target="_blank" rel="noreferrer">Открыть оригинал ↗</a></>}</p>
+        <p>{resultText(item.source_name || item.source || data.source)}{item.url && <> · {isSyntheticFixtureUrl(item.url) ? <span>Синтетическая ссылка (не оригинальная публикация)</span> : <a href={item.url} target="_blank" rel="noreferrer">Открыть оригинал ↗</a>}</>}</p>
       </article>} />
     </ResultSection>
     <ResultSection title="Качество данных"><div className="module-result-tags"><ResultTag>Без даты: {resultText(data.quality?.missingDate, '0')}</ResultTag><ResultTag>Неполный текст: {resultText(data.quality?.excerptCount, '0')}</ResultTag></div></ResultSection>
