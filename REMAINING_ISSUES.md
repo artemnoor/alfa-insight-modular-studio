@@ -23,6 +23,7 @@
 13. **P2 — News source coverage is partial.** One public CBR RSS feed has previously completed a live fetch; the other allowlisted feed and live outage path were not manually exercised. Fixture error scenarios cover injected failures.
 14. **P2 — Mobile comparison is dense.** The Studio and module pages show no horizontal overflow at 390 px, but the side-by-side company comparison is difficult to scan on a phone. A stacked comparison layout would improve readability.
 15. **INFO — Product chat/research error states and source destinations.** This pass did not submit product chat/research, force a missing archive/RAG dependency, or navigate to public source destinations. Those behaviors are not claimed as live-verified.
+16. **P2 — Independent module launch coverage is incomplete.** The latest browser E2E opened and exercised all nine routes through Studio. Separate CLI boot commands were previously verified for Personalization and Product, but not for each module in isolation. Run and document the remaining module commands when validating the standalone-development requirement.
 
 ## Data and cost handling
 
