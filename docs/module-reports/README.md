@@ -12,17 +12,17 @@
 | 04 | Personalization | **PARTIAL** | Сравнение профилей на одном наборе работает; качество ранжирования без gold labels — `NOT_EVALUATED`. Local Data в этом стенде заблокирован. | [04 — Personalization](04-personalization.md) |
 | 05 | Impact Analysis | **PARTIAL** | Fixture/evidence guard отработали; неподтверждённая связь осталась `unclear`. Свежий внешний вызов не делался. | [05 — Impact Analysis](05-impact-analysis.md) |
 | 06 | Bank Research / RAG | **PARTIAL** | Fixture и read-only локальный BM25 вернули 5 кандидатов; пустой запрос дал понятную ошибку. Семантическая релевантность не оценена. | [06 — Bank Research](06-bank-research.md) |
-| 07 | AI Agent Studio | **PARTIAL** | Один live вызов за 0,05797968 ₽; агент не вызвал запланированные профильные/evidence-инструменты, sources пусты. | [07 — AI Agent Studio](07-ai-agent.md) |
+| 07 | AI Agent Studio | **PARTIAL** | Два live-вызова: план зарегистрирован, но токенный лимит остановил run до research tools; fail-closed состояние и причина теперь отображаются. | [07 — AI Agent Studio](07-ai-agent.md) |
 | 08 | Evidence Verification | **PARTIAL** | Синтетическая точная цитата получила `supported`; смысловая применимость требует отдельной проверки. | [08 — Evidence Verification](08-evidence-verification.md) |
 | 09 | Alfa Insight Product | **PARTIAL** | Проверены выбор компании, лента, карточка, источник, переключение и история; чат/deep research не запускались без payload preview. | [09 — Alfa Insight Product](09-alfa-product.md) |
 
 ## Общие результаты
 
-- `npm run test:all` — **PASS** после последней UX-правки; TypeScript/Vite build, 8 root Python tests, 94 analytics tests, T08/T09/T10, pipeline и девять module-specific suites.
+- `npm run test:all` — **PASS** после fail-closed изменения AI Agent; TypeScript/Vite build, 8 root Python tests, 96 analytics tests, T08/T09/T10, pipeline и девять module-specific suites.
 - `npm run test:e2e:studio` — **PASS** для Studio: 9 карточек, все 9 маршрутов, 30 fixture-сценариев и suite-запусков, `errors=[]`.
 - Ширины Studio `1440`, `1280`, `390` CSS px без горизонтального переполнения. Отдельный прямой product E2E отмечен `PARTIAL`, потому что `ALFA_E2E_LOCAL_COMPANY_IDS` не был задан; read-only путь продукта проверен вручную в Chromium.
-- Два новых live AI запуска с известной ценой: News Intelligence `0,98417155 ₽` (21 provider/model request) и AI Agent `0,05797968 ₽` (1 request), всего `1,04215123 ₽` в Round 5. Оба запуска были одиночными, без повторов. Только News Intelligence использовал синтетические данные; для AI Agent пользователь разрешил отправку вручную выбранного local context. Исторические расходы предыдущих раундов отдельно не пересчитывались.
-- Исходные CSV, SQLite и историю исследований не удаляли и не редактировали. В Git включены только отчёты и screenshots с synthetic/empty состояниями.
+- Три разрешённых одиночных live AI запуска с известной ценой: News Intelligence `0,98417155 ₽` (21 provider/model request) и два AI Agent по `0,05797968 ₽` и `0,1114824 ₽` (по 1 request), всего `1,15363363 ₽` в Round 5. Повторов после вызовов не было. Для AI Agent пользователь разрешил отправку вручную выбранного local context. Исторические расходы предыдущих раундов отдельно не пересчитывались.
+- Исходные CSV/SQLite и существующие строки истории не изменяли и не удаляли. Два live-запуска AI Agent штатно добавили записи в историю стенда. В Git включены только отчёты и screenshots с synthetic/empty состояниями.
 
 ## Скриншоты Round 5
 

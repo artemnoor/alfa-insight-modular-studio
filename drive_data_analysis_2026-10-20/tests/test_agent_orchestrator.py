@@ -684,7 +684,21 @@ class AgentOrchestratorTests(unittest.TestCase):
         result, calls = self.run_script(script, max_total_tokens=1000)
         self.assertEqual([], calls)
         self.assertEqual("partial", result["status"])
+        self.assertEqual("partial", result["plan_status"])
         self.assertIn("токенов", result["stop_reason"])
+
+    def test_token_limit_after_plan_marks_unrun_steps_unavailable(self):
+        planned = envelope(calls=[call_tool("submit_research_plan", plan("get_company_profile", "get_event_facts"))])
+        planned["usage"]["prompt_tokens"] = 7200
+        result, calls = self.run_script([planned], max_total_tokens=11000)
+        self.assertEqual(1, len(calls))
+        self.assertEqual("partial", result["status"])
+        self.assertEqual("partial", result["plan_status"])
+        mandatory = {step["tool"]: step for step in result["plan_steps"]
+                     if step["tool"] in {"get_company_profile", "get_event_facts"}}
+        self.assertEqual({"get_company_profile", "get_event_facts"}, set(mandatory))
+        self.assertEqual({"unavailable"}, {step["status"] for step in mandatory.values()})
+        self.assertTrue(all("токенов" in step["reason"].lower() for step in mandatory.values()))
 
     def test_cost_budget_stops_next_iteration_after_reported_cost_limit(self):
         script = [envelope(calls=[call_tool("submit_research_plan", plan("get_company_profile"))], cost=5.1)]
@@ -756,6 +770,18 @@ class AgentOrchestratorTests(unittest.TestCase):
                     if step.get("kind") == "tool_call" and step.get("tool") == "search_bank_research"]
         self.assertEqual(["кредитование"], calls_to_search)
         self.assertEqual(["ok", "cached"], [step["status"] for step in searches])
+
+    def test_model_is_forced_to_plan_and_collect_required_context(self):
+        _, calls = self.run_script(self.base_script())
+        self.assertEqual(
+            {"type": "function", "function": {"name": "submit_research_plan"}},
+            calls[0]["tool_choice"],
+        )
+        self.assertEqual(
+            {"type": "function", "function": {"name": "get_company_profile"}},
+            calls[1]["tool_choice"],
+        )
+        self.assertEqual("auto", calls[2]["tool_choice"])
 
     def test_final_answer_is_rejected_without_required_profile_and_event_facts(self):
         script = [

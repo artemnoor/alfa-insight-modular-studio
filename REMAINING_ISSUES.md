@@ -4,11 +4,11 @@
 
 All nine modules were reopened and exercised in Chromium. Their fixture UI runs, module suites, and the nine-route Studio E2E passed. A new external-AI loading message now shows elapsed time and tells users that stage-level progress and exact usage are only available after completion; the full build and E2E passed after this UX change. Overall product readiness remains **PARTIAL**.
 
-Two new live requests completed in this round: News Intelligence on synthetic input reported 21 provider/model calls and **0.98417155 ₽**; AI Agent on a manually selected local profile/event reported one model call and **0.05797968 ₽**. Round 5 known spend is **1.04215123 ₽**; cumulative historical spend is not recalculated here.
+Three live requests completed in this round: News Intelligence on synthetic input reported 21 provider/model calls and **0.98417155 ₽**; two AI Agent calls on manually selected local profile/event reported **0.05797968 ₽** and **0.1114824 ₽**. Round 5 known spend is **1.15363363 ₽** across 23 provider/model requests; cumulative historical spend is not recalculated here.
 
 ### Open findings
 
-1. **P1 — AI Agent can finish without executing its evidence plan.** In the live run the model returned `partial`, called no planned `get_company_profile` or `get_event_facts` tools, and produced no source evidence. The UI exposes that partial state, but the orchestrator must enforce required checks or refuse to present an ungrounded conclusion as a completed research result.
+1. **P1 — AI Agent live run stops after planning, before evidence tools.** The post-change request registered four planned tools, then the internal token budget stopped the next model request before `get_company_profile`/`get_event_facts`; sources remained empty. The orchestrator now marks unfinished steps `unavailable`, returns `partial`, and displays the stop reason. Live research remains unverified; compact prompts/token estimation need improvement before another authorized run.
 2. **P1 — External AI thresholds are post-response checks, not guaranteed spend caps.** The News Intelligence request stayed below its displayed 1 ₽ threshold, but used 21 provider/model requests and took several minutes. Add provider-side spending limits or a conservative preflight/reservation before calling a threshold a cap.
 3. **P1 — Impact Analysis external route bypasses its canonical evidence pipeline.** The existing `run_external` path omits canonical Bank RAG retrieval and evidence checks. Route the UI through the canonical analyzer before treating external output as evidence-backed.
 4. **P2 — Several optional external modes remain unverified.** Business Intelligence, Impact Analysis, Bank Research, Evidence Verification and the product chat/deep research were not called in Round 5. Product chat/research was specifically skipped because the UI does not preview the complete payload before submission. Readiness/allowlist status is not proof of successful inference.
@@ -16,7 +16,7 @@ Two new live requests completed in this round: News Intelligence on synthetic in
 6. **P2 — Product history and API remain difficult to audit.** History rows omit some company/event context and cost; direct product API routes remain a legacy unversioned surface. The read endpoint's SQLite connection may update journal metadata.
 7. **P2 — Business graph and source coverage are limited.** The graph is a bounded static SVG (up to 15 nodes), payment amounts have unknown currency/period, and live RSS outage behavior was not freshly exercised because collection writes to persistent SQLite.
 
-The detailed per-module evidence is in [the nine Round 5 reports](docs/module-reports/README.md). No source CSV, SQLite database, or research history was cleared or edited during this pass.
+The detailed per-module evidence is in [the nine Round 5 reports](docs/module-reports/README.md). Source CSV and source-data SQLite were not changed; existing history rows were not edited or cleared. The two authorized live AI Agent runs appended new records through the normal history path.
 
 ## Historical note — update after round 4 (2026-10-22)
 
@@ -37,7 +37,7 @@ The detailed per-module evidence is in [the nine Round 5 reports](docs/module-re
 8. **P2 — Evidence Verification is not independent semantic review.** A deterministic percentage-consistency check now catches percentage conflicts. Other numeric units, composite claims and semantic citation applicability remain outside this check; the optional model review is not an independent expert assessment.
 9. **P2 — Business Intelligence graph is static.** A bounded SVG graph now shows relationship direction and type, but it is not an interactive exploration surface and only exposes up to 15 nodes. Payment totals use source `PAY_AMT` units with unknown currency/period.
 10. **P2 — Product history is hard to audit.** History rows omit some of company, event title, exact time and cost. Legacy entries may contain only metadata; expose those stored-result limitations in the UI.
-11. **P2 — History GET may update SQLite journal metadata.** `GET /api/history` uses a normal SQLite connection and runs `PRAGMA journal_mode=WAL`. No history rows were changed by the browser audit, but a read-only URI connection is preferable for a read endpoint.
+11. **P2 — History GET may update SQLite journal metadata.** `GET /api/history` uses a normal SQLite connection and runs `PRAGMA journal_mode=WAL`. Product history rows were not changed by the browser read; the two separate live AI Agent runs appended records normally. A read-only URI connection is preferable for a read endpoint.
 12. **P2 — Product API is a legacy unversioned surface.** Direct `/api/companies`, `/workspace`, `/event`, `/history`, `/research` and `/chat` payloads lack the module API's versioned contract/error envelope. Document and version them when evolving the endpoint shape.
 
 ## Coverage limits
@@ -51,6 +51,6 @@ The detailed per-module evidence is in [the nine Round 5 reports](docs/module-re
 ## Data and cost handling
 
 - The latest live provider request used only a synthetic article and a synthetic T09 candidate; no company profile or bank material was sent. It ended during T08 and reported 0.447428 ₽. Earlier priced attempts included one overrun and a separate timeout with unknown final cost; cumulative actual charge remains unavailable.
-- Fixture suites and browser algorithm runs used synthetic data. Local option lists were read from the configured local root; source CSVs and existing histories were not edited, cleared, or included in the reports. Some local paths can touch derived SQLite caches; see module reports for their safeguards and remaining caveats.
+- Fixture suites and browser algorithm runs used synthetic data. Local option lists were read from the configured local root; source CSVs and existing history rows were not edited or cleared. The two authorized AI Agent runs appended records in the staging history through the normal application path. No local values were included in reports. Some local paths can touch derived SQLite caches; see module reports for their safeguards and remaining caveats.
 - The local dev API is currently running at `http://127.0.0.1:8097`, with Studio at `http://127.0.0.1:5173/studio`. It has the existing read-only data root configured and External AI is enabled for manual actions only; no automatic provider calls occur.
 - For module-level evidence and exact reproduction details, see [the nine reports](docs/module-reports/README.md).

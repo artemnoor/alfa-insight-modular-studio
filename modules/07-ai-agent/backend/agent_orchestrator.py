@@ -1121,6 +1121,18 @@ def run_agent(
             executed.append(name)
         return executed
 
+    def required_tool_choice() -> str | dict[str, Any]:
+        """Require the plan and mandatory evidence tools before allowing a final answer."""
+        if plan is None:
+            name = "submit_research_plan"
+        elif "get_company_profile" not in completed_tools:
+            name = "get_company_profile"
+        elif "get_event_facts" not in completed_tools:
+            name = "get_event_facts"
+        else:
+            return "auto"
+        return {"type": "function", "function": {"name": name}}
+
     question_context = f" Вопрос пользователя для этого исследования: {research_question}" if research_question else ""
     initial_messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -1138,7 +1150,7 @@ def run_agent(
         try:
             stats["model_calls"] += 1
             payload = {"model": model, "messages": initial_messages, "tools": TOOL_DEFINITIONS,
-                       "tool_choice": "auto", "reasoning": {"effort": "none"},
+                       "tool_choice": required_tool_choice(), "reasoning": {"effort": "none"},
                        "temperature": 0.1, "max_tokens": MAX_OUTPUT_TOKENS}
             envelope = request(payload, min(45, remaining()))
             account_usage(envelope)
@@ -1333,6 +1345,13 @@ def run_agent(
     if final is None:
         missing = [name for name in ("get_company_profile", "get_event_facts") if name not in completed_tools]
         reason = stop_reason if not missing else "Не получены обязательные данные: " + ", ".join(missing)
+        for step in plan_steps:
+            if step.get("status") in {"planned", "running"}:
+                mark_plan_step(
+                    str(step.get("tool") or ""),
+                    "unavailable",
+                    f"Проверка не выполнена: {stop_reason or 'исследование остановлено до завершения.'}",
+                )
         final = _fallback_result(selected_event, reason, "partial")
 
     claims = []
@@ -1437,17 +1456,20 @@ def run_agent(
     final["plan"] = plan or {"goal": "План исследования не был корректно зарегистрирован.", "known_facts": [], "questions": [], "selected_tools": []}
     final["plan_history"] = plan_history
     final["plan_steps"] = [dict(item) for item in plan_steps]
-    plan_complete = all(
+    plan_complete = plan is not None and all(
         item["status"] == "completed"
         or (item["status"] == "skipped" and bool(item.get("reason", "").strip()))
         for item in plan_steps
     )
-    plan_accounted = all(item["status"] in {"completed", "skipped", "failed", "unavailable"} for item in plan_steps)
+    plan_accounted = plan is not None and all(
+        item["status"] in {"completed", "skipped", "failed", "unavailable"} for item in plan_steps
+    )
     final["plan_status"] = "complete" if plan_complete else "partial" if plan_accounted else "in_progress"
     if final_received and not plan_complete:
         final["status"] = "partial"
     if plan is None:
         final["status"], final["impact"], final["confidence"] = "partial", "unclear", "low"
+        final["plan_status"] = "partial"
         if stop_reason == "Финальный ответ получен.":
             stop_reason = "План исследования не был принят; результат ограничен."
 
