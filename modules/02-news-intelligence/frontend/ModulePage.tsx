@@ -92,7 +92,7 @@ export const moduleSpec: ModuleSpec = {
   id: 'news-intelligence',
   title: 'News Intelligence · T08/T09',
   summary: 'Разберите классификацию новости, извлечённые факты и проверку связи с архивными событиями.',
-  purpose: 'Вставьте реальную публикацию. В External AI исходные T08/T09 используют разрешённые модели; при наличии кандидатов они сопоставляются с локальным архивом.',
+  purpose: 'Вставьте текст публикации. В External AI T08 использует разрешённые модели для классификации. T09 сравнивает событие с указанными кандидатами или, если список пуст, с локальным архивом.',
   fields: [
     { name: 'text', label: 'Текст публикации', kind: 'text', rows: 8, minLength: 20, placeholder: 'Вставьте текст новости (не менее 20 символов)…' },
     { name: 'title', label: 'Заголовок публикации (необязательно)', externalOnly: true },
@@ -106,7 +106,7 @@ export const moduleSpec: ModuleSpec = {
   highlights: [],
   renderResult,
   externalAi: true,
-  externalAiScope: 'текст и заголовок публикации, а также до десяти выбранных кандидатов T09 из локального архива',
+  externalAiScope: 'текст и заголовок публикации, а также до десяти кандидатов T09 из формы; если список пуст — до десяти кандидатов из локального архива',
   preferredMode: 'external_ai',
   localData: true,
   localFields: ['text', 'content_status', 't09_candidates'],
@@ -114,3 +114,4 @@ export const moduleSpec: ModuleSpec = {
 }
 
 export default function ModulePage() { return <ModuleWorkbench spec={moduleSpec} /> }
+
