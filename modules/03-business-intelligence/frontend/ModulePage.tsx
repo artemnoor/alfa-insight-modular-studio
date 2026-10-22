@@ -87,6 +87,7 @@ function renderResult(data: Record<string, any>) {
     </div>{connections.truncated && <p className="module-result-inline-note">Для списков связей показаны первые 50 записей каждого типа; полные количества указаны в заголовках категорий.</p>}</ResultSection>
     <ResultSection title="Граф бизнес-связей"><ResultMetrics items={[{ label: 'Узлов', value: asRows(graph.nodes).length }, { label: 'Связей', value: asRows(graph.edges).length }, { label: 'Направление потоков', value: 'Входящие и исходящие платежи' }]} /><NetworkGraph value={data.graph} /><p className="module-result-inline-note">Платёж — наблюдаемый поток, а не доказательство поставки. Общий GROUP_ID сам по себе не подтверждает корпоративный контроль.</p></ResultSection>
     {data.aiInterpretation && <ResultSection title="AI-пояснение · Polza AI"><article className="module-result-card"><h4>{resultText(data.aiInterpretation.summary, 'Пояснение не сформировано.')}</h4><div className="module-result-columns"><div className="module-result-column"><h4>Наблюдения</h4><ResultList items={data.aiInterpretation.observations} empty="Наблюдений нет." renderItem={item => <p>{resultText(item)}</p>} /><h4>Гипотезы</h4><ResultList items={data.aiInterpretation.hypotheses} empty="Гипотез нет." renderItem={item => <p>{resultText(item)}</p>} /></div><div className="module-result-column"><h4>Недостающие данные</h4><ResultList items={data.aiInterpretation.missing_data} empty="Не указаны." renderItem={item => <p>{resultText(item)}</p>} /></div></div><p className="module-result-inline-note">Модель получила выбранные профильные поля и платёжные агрегаты; графовые детали и ID контрагентов не отправлялись. Результат AI — интерпретация, проверяйте её по данным выше.</p></article></ResultSection>}
+    {data.providerError && <ResultSection title="Локальные данные готовы · AI-пояснение не завершилось"><article className="module-result-card"><p>{resultText(data.providerError.message)}</p><p className="module-result-inline-note">Профиль, граф и агрегаты выше рассчитаны локально и доступны без AI. Модель: {resultText(data.model)} · внешних вызовов: {resultText(data.tokenUsage?.modelCalls, '1')} · подтверждённая стоимость: {data.tokenUsage?.costReported && data.tokenUsage?.costRub != null ? `${data.tokenUsage.costRub} ₽` : 'не сообщена; проверьте кабинет Polza'}. Автоматического повтора не было.</p></article></ResultSection>}
   </>
 }
 
@@ -126,7 +127,7 @@ export const moduleSpec = {
   "localData": true,
   "externalAi": true,
   "externalAiScope": "ограниченные поля профиля, платёжные агрегаты и число наблюдаемых связей",
-  "preferredMode": "external_ai",
+  "preferredMode": "local_data",
   "productLink": false
 }
 

@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "drive_data_analysis_2026-10-20"))
 import business_graph as graph
 sys.path.insert(0, str(ROOT / "shared" / "backend"))
-from polza_client import chat_json
+from polza_client import ProviderResponseError, chat_json
 
 _GRAPH_ACCESS_LOCK = RLock()
 
@@ -64,10 +64,21 @@ def run_external(payload):
         "paymentMetrics": metrics,
         "observedConnectionCounts": {key: len(value) if isinstance(value, list) else 0 for key, value in network.items()},
         "limitations": result.get("interpretationLimitations", [])}
-    response = chat_json(
-        "Ты помощник аналитика компаний. Объясняй только наблюдаемые поля и агрегаты. Не утверждай, что платёж означает поставку, а общий GROUP_ID — контроль. Отделяй факт от гипотезы; если поля не подтверждают связь, верни unclear. Ответь по-русски JSON: summary (string), observations (array of strings), hypotheses (array of strings), missing_data (array of strings).",
-        summary, max_cost_rub=payload.get("max_cost_rub", 1), max_tokens=800,
-    )
+    try:
+        response = chat_json(
+            "Ты помощник аналитика компаний. Объясняй только наблюдаемые поля и агрегаты. Не утверждай, что платёж означает поставку, а общий GROUP_ID — контроль. Отделяй факт от гипотезы; если поля не подтверждают связь, верни unclear. Верни только один JSON-объект без Markdown и текста до/после: summary (string), observations (array of strings), hypotheses (array of strings), missing_data (array of strings).",
+            summary, max_cost_rub=payload.get("max_cost_rub", 1), max_tokens=800,
+        )
+    except ProviderResponseError as exc:
+        # Keep the already-computed local profile and network visible when the
+        # optional explanation fails; report the completed request's billing.
+        result["providerError"] = {"code": exc.public_code, "message": str(exc)}
+        result["tokenUsage"] = exc.provider_usage
+        result["model"] = exc.provider_usage.get("model")
+        result["provenance"] = {**result["provenance"], "kind": "local company data + Polza AI interpretation incomplete",
+            "externalCalls": exc.provider_usage.get("modelCalls", 1), "model": result["model"],
+            "sentToProvider": ["limited profile fields", "payment aggregates", "connection counts"]}
+        return result
     result["aiInterpretation"] = response["answer"]
     result["model"] = response["model"]
     result["tokenUsage"] = response["usage"]

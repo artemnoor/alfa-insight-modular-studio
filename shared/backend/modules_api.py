@@ -153,6 +153,9 @@ def _external_validation(data: dict[str, Any]) -> list[dict[str, Any]]:
         {"name": "Фактическая стоимость сообщена и в лимите", "passed": (reported_cost <= budget) if cost_is_known and isinstance(budget, (int, float)) else None,
          "expected": {"max": budget, "reported": True}, "actual": reported_cost},
     ]
+    if data.get("providerError"):
+        checks.append({"name": "Пояснение AI сформировано", "passed": None,
+                       "expected": "завершённый JSON-ответ", "actual": data["providerError"].get("code", "provider_error")})
     if "planHistory" in data:
         checks.append({"name": "План исследования зарегистрирован", "passed": bool(data.get("planHistory")),
             "expected": {"min": 1}, "actual": len(data.get("planHistory", []))})

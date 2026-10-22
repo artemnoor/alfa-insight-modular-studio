@@ -2,13 +2,100 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
 from typing import Any
 
 import requests
 
 from stage1_analyzer import API_URL, MODEL, get_api_key
 from agent_orchestrator import approved_models
+
+logger = logging.getLogger(__name__)
+
+
+class ProviderResponseError(RuntimeError):
+    """Safe, user-facing failure from a completed and billable model call."""
+
+    def __init__(self, message: str, code: str, usage: dict[str, Any]):
+        super().__init__(message)
+        self.public_code = code
+        self.provider_usage = usage
+
+
+def _usage(envelope: dict[str, Any], budget: float) -> dict[str, Any]:
+    raw_usage = envelope.get("usage") if isinstance(envelope.get("usage"), dict) else {}
+    raw_cost = raw_usage.get("cost_rub", raw_usage.get("costRub", raw_usage.get("cost")))
+    try:
+        cost = float(raw_cost) if raw_cost is not None else None
+    except (TypeError, ValueError):
+        cost = None
+    return {
+        "model": envelope.get("model") or MODEL,
+        "inputTokens": int(raw_usage.get("prompt_tokens", raw_usage.get("input_tokens", 0)) or 0),
+        "outputTokens": int(raw_usage.get("completion_tokens", raw_usage.get("output_tokens", 0)) or 0),
+        "costRub": cost,
+        "costReported": cost is not None,
+        "budgetRub": budget,
+        "budgetExceeded": cost is not None and cost > budget,
+        "modelCalls": 1,
+    }
+
+
+def _content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        return "".join(
+            str(part.get("text", "")) for part in content
+            if isinstance(part, dict) and part.get("type") in {"text", "output_text"}
+        ).strip()
+    return ""
+
+
+def _parse_object(content: Any) -> dict[str, Any]:
+    if isinstance(content, dict):
+        return content
+    text = _content_text(content)
+    if not text:
+        raise ValueError("empty")
+    candidates = [text]
+    fenced = re.fullmatch(r"\s*```(?:json)?\s*([\s\S]*?)\s*```\s*", text, re.IGNORECASE)
+    if fenced:
+        candidates.insert(0, fenced.group(1).strip())
+    # Some compatible providers wrap JSON in a short preamble. Extract a
+    # balanced object, respecting quoted braces; never repair truncated JSON.
+    start = text.find("{")
+    if start >= 0:
+        depth, quoted, escaped = 0, False, False
+        for index in range(start, len(text)):
+            char = text[index]
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quoted = False
+            elif char == '"':
+                quoted = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    candidates.append(text[start:index + 1])
+                    break
+    for candidate in candidates:
+        try:
+            result = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(result, dict):
+            return result
+        raise ValueError("not_object")
+    raise ValueError("invalid")
 
 
 def _truthy(value: str | None) -> bool:
@@ -67,29 +154,27 @@ def chat_json(
     envelope = response.json()
     choice = (envelope.get("choices") or [{}])[0]
     content = (choice.get("message") or {}).get("content")
-    if isinstance(content, dict):
-        answer = content
-    else:
-        try:
-            answer = json.loads(str(content or ""))
-        except json.JSONDecodeError as exc:
-            raise ValueError("Polza вернул ответ не в JSON-формате.") from exc
-    if not isinstance(answer, dict):
-        raise ValueError("Polza вернул JSON другого типа вместо объекта.")
-    raw_usage = envelope.get("usage") if isinstance(envelope.get("usage"), dict) else {}
-    raw_cost = raw_usage.get("cost_rub", raw_usage.get("costRub"))
+    usage = _usage(envelope, budget)
+    finish_reason = choice.get("finish_reason")
+    message = choice.get("message") or {}
     try:
-        cost = float(raw_cost) if raw_cost is not None else None
-    except (TypeError, ValueError):
-        cost = None
-    usage = {
-        "input_tokens": int(raw_usage.get("prompt_tokens", raw_usage.get("input_tokens", 0)) or 0),
-        "output_tokens": int(raw_usage.get("completion_tokens", raw_usage.get("output_tokens", 0)) or 0),
-        "cost_rub": cost,
-        "cost_reported": cost is not None,
-        "budget_rub": budget,
-        "budget_exceeded": cost is not None and cost > budget,
-        "model_calls": 1,
-    }
+        if finish_reason == "length":
+            raise ValueError("truncated")
+        if message.get("refusal"):
+            raise ValueError("refused")
+        answer = _parse_object(content)
+    except ValueError as exc:
+        if str(exc) == "truncated":
+            code, public_message = "PROVIDER_RESPONSE_TRUNCATED", "Polza оборвал ответ по лимиту токенов; автоматического повтора нет. Учёт вызова сохранён; если провайдер не сообщил стоимость, проверьте кабинет перед повтором."
+        elif str(exc) == "refused":
+            code, public_message = "PROVIDER_RESPONSE_REFUSED", "Polza отказал в интерпретации. Граф и агрегаты рассчитаны локально; платный повтор не запускался."
+        elif str(exc) == "empty":
+            code, public_message = "PROVIDER_RESPONSE_EMPTY", "Polza завершил запрос без текстового JSON-ответа. Учёт вызова сохранён; автоматического повтора нет."
+        elif str(exc) == "not_object":
+            code, public_message = "PROVIDER_RESPONSE_NOT_OBJECT", "Polza вернул JSON, но не объект ожидаемого формата. Учёт вызова сохранён; автоматического повтора нет."
+        else:
+            code, public_message = "PROVIDER_INVALID_JSON", "Polza завершил запрос, но вернул ответ, который нельзя разобрать как JSON-объект. Учёт вызова сохранён; автоматического повтора нет."
+        logger.warning("[FIX:POLZA_JSON] response_rejected code=%s finish_reason=%s cost_reported=%s cost_rub=%s output_tokens=%s", code, finish_reason, usage["costReported"], usage["costRub"], usage["outputTokens"])
+        raise ProviderResponseError(public_message, code, usage) from None
     return {"answer": answer, "model": envelope.get("model") or MODEL, "usage": usage,
-            "finish_reason": choice.get("finish_reason")}
+            "finish_reason": finish_reason}
