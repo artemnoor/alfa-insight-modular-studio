@@ -185,6 +185,15 @@ export function rankModelChoices(options, choices, limit = 3, { allowEmpty = fal
   return { ranked, confidence: maximum, supported: true }
 }
 
+export function findTaxonomyBranchAnswer(branches, key, allowSingleBranchFallback = false) {
+  const rows = Array.isArray(branches) ? branches : []
+  const exact = rows.find((item) => item?.key === key)
+  if (exact) return exact
+  // A one-branch request has an unambiguous answer even when a model omits or
+  // changes the bookkeeping key. The category IDs are still validated below.
+  return allowSingleBranchFallback && rows.length === 1 ? rows[0] : null
+}
+
 const topicNodesByCode = new Map()
 function indexTopicNodes(nodes) {
   for (const node of nodes) {
@@ -317,10 +326,9 @@ async function requestTaxonomyChoiceBatch(state, branches) {
       operation: 'T08 taxonomy branch ranking',
     })
     try {
-      const answerByKey = new Map((Array.isArray(result.answer.branches) ? result.answer.branches : []).map((item) => [item.key, item]))
       const ranked = batch.map(({ branch }, batchIndex) => {
         const key = `branch_${keyOffset + batchIndex}`
-        const answer = answerByKey.get(key)
+        const answer = findTaxonomyBranchAnswer(result.answer.branches, key, batch.length === 1)
         if (!answer) throw new Error(`Разрешённая модель пропустила таксономическую ветку ${key}`)
         if (!Array.isArray(answer.choices)) throw new Error(`Разрешённая модель вернула некорректный список choices для ${key}`)
         const rankedChoices = rankModelChoices(branch.options, answer.choices, 3, {

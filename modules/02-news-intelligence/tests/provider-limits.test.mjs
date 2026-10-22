@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { capProviderRequest, MAX_PROVIDER_CALLS, MAX_PROVIDER_OUTPUT_TOKENS, providerStopReason } from '../backend/provider_limits.mjs'
+import { capProviderRequest, MAX_PROVIDER_CALLS, MAX_PROVIDER_OUTPUT_TOKENS, mergeAbortSignals, providerStopReason } from '../backend/provider_limits.mjs'
 
 test('provider output tokens preserve the T08 JSON budget while staying bounded', () => {
   assert.equal(MAX_PROVIDER_OUTPUT_TOKENS, 4096)
@@ -16,3 +16,19 @@ test('provider guard reports the exact stop cause', () => {
   assert.equal(providerStopReason({ modelCalls: 1, costReported: true, budgetExceeded: false }), null)
 })
 
+test('provider request keeps both classifier and safety timeout signals', () => {
+  const classifierTimeout = new AbortController()
+  const safetyTimeout = new AbortController()
+  const merged = mergeAbortSignals(classifierTimeout.signal, safetyTimeout.signal)
+
+  classifierTimeout.abort(new DOMException('classifier timeout', 'TimeoutError'))
+  assert.equal(merged.aborted, true)
+  assert.equal(merged.reason, classifierTimeout.signal.reason)
+
+  const secondClassifierTimeout = new AbortController()
+  const secondSafetyTimeout = new AbortController()
+  const secondMerged = mergeAbortSignals(secondClassifierTimeout.signal, secondSafetyTimeout.signal)
+  secondSafetyTimeout.abort(new DOMException('safety timeout', 'TimeoutError'))
+  assert.equal(secondMerged.aborted, true)
+  assert.equal(secondMerged.reason, secondSafetyTimeout.signal.reason)
+})

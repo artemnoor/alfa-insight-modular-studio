@@ -5,7 +5,7 @@ const input = JSON.parse(await new Promise((resolve, reject) => {
   process.stdin.on('end', () => resolve(value || '{}'))
   process.stdin.on('error', reject)
 }))
-const { capProviderRequest, MAX_PROVIDER_CALLS, providerStopReason } = await import('./provider_limits.mjs')
+const { capProviderRequest, MAX_PROVIDER_CALLS, mergeAbortSignals, providerStopReason } = await import('./provider_limits.mjs')
 
 // Fixture mode exercises the production T08/T09 control flow while preventing every
 // outbound request. External mode calls the approved provider only after a manual run.
@@ -134,12 +134,16 @@ if (!externalMode) {
       providerUsage.model = request.model
       providerUsage.costReported = false
       const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 25000)
+      const timer = setTimeout(() => controller.abort(), 90000)
       let responseValue
       try {
-        responseValue = await nativeFetch(target, { ...options, body: JSON.stringify(request), signal: controller.signal })
+        responseValue = await nativeFetch(target, {
+          ...options,
+          body: JSON.stringify(request),
+          signal: mergeAbortSignals(options.signal, controller.signal),
+        })
       } catch (cause) {
-        const timedOut = cause?.name === 'AbortError' || cause?.name === 'TimeoutError'
+        const timedOut = options.signal?.aborted || controller.signal.aborted || cause?.name === 'AbortError' || cause?.name === 'TimeoutError'
         const code = timedOut ? 'POLZA_REQUEST_TIMEOUT' : 'POLZA_TRANSPORT_ERROR'
         const message = timedOut ? 'Истёк таймаут запроса к Polza.' : 'Не удалось получить ответ от Polza по сети.'
         providerUsage.costReported = false
@@ -263,4 +267,3 @@ if (externalMode) {
     note: 'Полные алгоритмы T08/T09 выполнены; ответы модели синтетические и применимы только для проверки потока.' }
 }
 process.stdout.write(JSON.stringify(result))
-

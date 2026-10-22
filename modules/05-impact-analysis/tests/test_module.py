@@ -10,6 +10,19 @@ class IsolatedFixtureTests(unittest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertTrue(result)
 
+    def test_missing_provider_cost_is_not_reported_as_within_threshold(self):
+        adapter = _load("impact-analysis")
+        summary = adapter._summarize_usage({"prompt_tokens": 12}, 1.0)
+        self.assertIsNone(summary["cost_rub"])
+        self.assertIsNone(summary["budget_exceeded"])
+        self.assertEqual(summary["budget_status"], "NOT_REPORTED")
+
+    def test_reported_cost_is_compared_to_threshold_after_response(self):
+        adapter = _load("impact-analysis")
+        summary = adapter._summarize_usage({"cost_rub": 1.25}, 1.0)
+        self.assertTrue(summary["budget_exceeded"])
+        self.assertEqual(summary["budget_status"], "OVER_REPORTED_THRESHOLD")
+
     def test_prepared_scenarios(self):
         status, result = dispatch("POST", "/api/modules/impact-analysis/tests", {})
         self.assertEqual(status, 200)

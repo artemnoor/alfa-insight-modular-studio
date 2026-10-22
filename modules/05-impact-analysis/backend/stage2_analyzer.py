@@ -324,9 +324,13 @@ def _apply_evidence_guards(
         analysis["relevance"] = "unclear"
         analysis["impact"] = "unclear"
         analysis["confidence"] = "low"
+        analysis["what_happened"] = str(news.get("title", "")).strip() or "Текст новости отсутствует."
+        analysis["why_it_matters"] = "Связь с компанией не оценена: текст новости отсутствует."
         analysis["risks"] = []
         analysis["opportunities"] = []
         analysis["actions"] = ["Открыть первоисточник и проверить полный текст публикации."]
+        analysis["evidence"] = []
+        analysis["bank_support"] = []
         analysis["missing_data"] = ["Полный текст новости отсутствует."]
         adjustments.append("Текст публикации отсутствует; оценка воздействия принудительно оставлена неясной.")
         return adjustments

@@ -6,6 +6,13 @@ export function capProviderRequest(request) {
   return { ...request, max_tokens: Math.min(requested, MAX_PROVIDER_OUTPUT_TOKENS) }
 }
 
+export function mergeAbortSignals(...signals) {
+  const active = signals.filter(Boolean)
+  if (!active.length) return undefined
+  if (active.length === 1) return active[0]
+  return AbortSignal.any(active)
+}
+
 export function providerStopReason(usage) {
   if (usage.providerError) return usage.providerError
   if (usage.budgetExceeded) return {
@@ -22,4 +29,3 @@ export function providerStopReason(usage) {
   }
   return null
 }
-

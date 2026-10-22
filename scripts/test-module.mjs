@@ -22,4 +22,3 @@ if (slug === 'news-intelligence') {
 }
 const fixtures = spawnSync(python, ['scripts/test-module-fixtures.py', slug], { cwd: root, stdio: 'inherit', env: process.env })
 process.exit(fixtures.status ?? 1)
-

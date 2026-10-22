@@ -874,4 +874,3 @@ def format_direct_connection_rows(network: dict[str, Any]) -> list[dict[str, Any
 
 if __name__ == "__main__":
     print(json.dumps(ensure_database(), ensure_ascii=False, indent=2))
-

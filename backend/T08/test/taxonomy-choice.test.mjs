@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   hasExplicitRegulatoryLegalSignal,
+  findTaxonomyBranchAnswer,
   matchingEventParentCandidates,
   rankModelChoices,
   requiresLegalParentFallback,
@@ -21,6 +22,22 @@ describe('T08 taxonomy response normalization', () => {
 
     assert.deepEqual(ranked.ranked.map(({ node }) => node.id), ['node-2', 'node-1'])
     assert.equal(ranked.confidence, 0.9)
+  })
+
+  it('maps a single returned branch to its only requested branch when the model omits the key', () => {
+    const answer = { choices: [{ id: 'node-1', confidence: 0.9 }] }
+    assert.equal(findTaxonomyBranchAnswer([answer], 'branch_0', true), answer)
+    assert.equal(findTaxonomyBranchAnswer([{ key: 'branch_2', ...answer }], 'branch_0', true).choices[0].id, 'node-1')
+  })
+
+  it('requires exact branch keys for multiple requested branches', () => {
+    const rows = [
+      { key: 'branch_1', choices: [{ id: 'node-1' }] },
+      { key: 'branch_2', choices: [{ id: 'node-2' }] },
+    ]
+    assert.equal(findTaxonomyBranchAnswer(rows, 'branch_1', false), rows[0])
+    assert.equal(findTaxonomyBranchAnswer(rows, 'branch_0', false), null)
+    assert.equal(findTaxonomyBranchAnswer(rows.slice(0, 1), 'branch_0', false), null)
   })
 
   it('does not map an ambiguous label or an unknown invented class', () => {

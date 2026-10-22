@@ -114,4 +114,3 @@ export const moduleSpec: ModuleSpec = {
 }
 
 export default function ModulePage() { return <ModuleWorkbench spec={moduleSpec} /> }
-

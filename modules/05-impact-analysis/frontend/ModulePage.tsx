@@ -8,6 +8,7 @@ function renderResult(data: Record<string, any>) {
     <ResultSection title="Событие"><article className="module-result-card"><h4>{resultText(analysis.what_happened || data.news?.title, 'Содержание события не указано.')}</h4><p>{resultText(analysis.why_it_matters, data.analysisStatus === 'not_run' ? 'Внешний AI-анализ не запускался в режиме Local Data.' : 'Причинная связь не установлена.')}</p>{data.news?.url && <p><a href={data.news.url} target="_blank" rel="noreferrer">Открыть исходную публикацию ↗</a></p>}<p>Полнота источника: {resultText(data.news?.content_status, 'не указана')} · модель: {resultText(data.model, data.analysisStatus === 'not_run' ? 'не запускалась' : 'фикстура')}</p>{Array.isArray(data.qualityWarnings) && data.qualityWarnings.length > 0 && <ResultTextList items={data.qualityWarnings} />}</article></ResultSection>
     <ResultSection title="Что возможно и что проверить"><div className="module-result-columns"><div className="module-result-column"><h4>Возможные риски</h4><ResultTextList items={analysis.risks} empty="Подтверждённых рисков не указано." /><h4>Возможности</h4><ResultTextList items={analysis.opportunities} empty="Подтверждённых возможностей не указано." /></div><div className="module-result-column"><h4>Проверочные действия</h4><ResultTextList items={analysis.actions} /><h4>Не хватает данных</h4><ResultTextList items={analysis.missing_data} /></div></div></ResultSection>
     <ResultSection title="Данные и предположения"><div className="module-result-columns"><div className="module-result-column"><h4>Факты профиля</h4><ResultList items={data.facts || data.profileFacts} empty="Факты профиля не переданы." renderItem={item => <p><ResultTag tone="good">Факт</ResultTag> {resultText(item.field)}: {resultText(item.value)}</p>} /></div><div className="module-result-column"><h4>Гипотезы</h4><ResultList items={data.hypotheses} empty="Отдельных гипотез нет." renderItem={item => <p><ResultTag tone="warn">Гипотеза</ResultTag> {resultText(item.statement)}</p>} /></div></div></ResultSection>
+    {data.tokenUsage && <ResultSection title="Расход внешнего анализа"><ResultMetrics items={[{ label: 'Стоимость по отчёту провайдера', value: data.tokenUsage.cost_reported ? `${data.tokenUsage.cost_rub} ₽` : 'не сообщена' }, { label: 'Порог уведомления', value: `${data.tokenUsage.budget_rub} ₽` }, { label: 'Статус порога', value: data.tokenUsage.budget_status === 'NOT_REPORTED' ? 'не удалось проверить' : data.tokenUsage.budget_status === 'OVER_REPORTED_THRESHOLD' ? 'сообщённая стоимость выше порога' : 'сообщённая стоимость в пределах порога' }]} /><p className="module-result-inline-note">{resultText(data.tokenUsage.budget_note, 'Порог проверяется после ответа; это не гарантированный лимит расхода.')}</p></ResultSection>}
     <ResultSection title="Ограничения проверки"><ResultTextList items={data.guardAdjustments} empty="Корректировок evidence guard нет." /></ResultSection>
   </>
 }
@@ -20,7 +21,7 @@ export const moduleSpec = {
   "fields": [
     { "name": "company_id", "label": "Компания из локального профиля", "kind": "select", "optionsSource": "company_id" },
     { "name": "event_id", "label": "Событие из обработанного архива", "kind": "select", "optionsSource": "event_id" },
-    { "name": "max_cost_rub", "label": "Лимит стоимости (₽, максимум 5)", "kind": "number", "initial": "1", "min": 0.05, "max": 5, "externalOnly": true },
+    { "name": "max_cost_rub", "label": "Порог уведомления о стоимости (₽)", "kind": "number", "initial": "1", "min": 0.05, "max": 5, "externalOnly": true, "helperText": "Сравнивается после ответа Polza и не ограничивает фактический расход." },
     {
       "name": "profile",
       "label": "Профиль (JSON)",
@@ -66,6 +67,7 @@ export const moduleSpec = {
   "externalAiScope": "полный выбранный профиль, текст и метаданные выбранного события, ссылка на источник",
   "preferredMode": "external_ai",
   "localData": true,
+  "localRunLabel": "Загрузить профиль и событие",
   "localFields": ["event_id"],
   "productLink": false
 }

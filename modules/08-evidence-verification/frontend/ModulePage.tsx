@@ -1,7 +1,7 @@
 import { ModuleWorkbench, type ModuleSpec } from '../../../shared/frontend/ModuleWorkbench'
 import { ResultList, ResultMetrics, ResultSection, ResultTag, ResultTextList, asRows, resultText } from '../../../shared/frontend/ModuleResult'
 
-function renderResult(data: Record<string, any>) {
+function renderResult(data: Record<string, any>, mode?: string) {
   const checks = asRows(data.checks)
   const verified = asRows(data.verified)
   return <>
@@ -10,7 +10,7 @@ function renderResult(data: Record<string, any>) {
     <ResultSection title="Принятые доказательства"><ResultList items={verified} empty="Ни одна цитата не прошла текущую проверку." renderItem={item => <article className="module-result-card"><h4>{resultText(item.source_title || item.source_id)}</h4><p>«{resultText(item.quote)}»</p></article>} /></ResultSection>
     <ResultSection title="Предупреждения"><ResultTextList items={data.warnings} empty="Предупреждений нет." /></ResultSection>
     {data.semanticReview && <ResultSection title="Смысловая проверка Polza AI"><ResultMetrics items={[{ label: 'Семантический статус', value: data.semanticReview.status }, { label: 'Проверено моделью', value: asRows(data.semanticReview.reviews).length }, { label: 'Независимая экспертиза', value: data.semanticReview.independent ? 'да' : 'нет' }]} /><ResultList items={data.semanticReview.reviews} empty="Смысловые оценки отсутствуют." renderItem={review => <article className="module-result-card"><div className="module-result-card-top"><h4>Утверждение {resultText(review.claim_id)}</h4><ResultTag>{resultText(review.status)}</ResultTag></div><p>{resultText(review.reason)}</p></article>} /><p className="module-result-inline-note">Точное совпадение проверено локально. Семантическая оценка выполнена той же моделью, что сформировала вывод, и не является независимой экспертизой.</p></ResultSection>}
-    {!data.semanticReview && <p className="module-result-inline-note">Fixture проверяет точное присутствие цитаты. Для ручной семантической проверки Polza AI передайте собственные claims и источники.</p>}
+    {!data.semanticReview && <p className="module-result-inline-note">{mode === 'local_data' ? 'Local Data проверил точное присутствие цитаты без внешнего AI.' : 'Fixture проверяет точное присутствие цитаты на подготовленных данных.'} Для ручной семантической проверки Polza AI передайте собственные claims и источники.</p>}
   </>
 }
 

@@ -30,6 +30,18 @@ def run_local(payload):
         "news":news,"limitations":["Local Data загрузил проверенные входы. AI-анализ не запускался; нажмите External AI для вывода по событию."],
         "provenance":{"kind":"real local profile and processed news archive; AI not run","sources":[news["url"]] if news["url"] else [],"externalCalls":0}}
 
+def _summarize_usage(raw_usage, budget):
+    raw_usage = raw_usage if isinstance(raw_usage, dict) else {}
+    raw_cost = raw_usage.get("cost_rub", raw_usage.get("costRub"))
+    try: cost=float(raw_cost) if raw_cost is not None else None
+    except (TypeError,ValueError): cost=None
+    return {"input_tokens":raw_usage.get("prompt_tokens",raw_usage.get("input_tokens",0)),
+        "output_tokens":raw_usage.get("completion_tokens",raw_usage.get("output_tokens",0)),
+        "cost_rub":cost,"cost_reported":cost is not None,"budget_rub":budget,
+        "budget_exceeded":None if cost is None else cost>budget,
+        "budget_status":"NOT_REPORTED" if cost is None else "OVER_REPORTED_THRESHOLD" if cost>budget else "WITHIN_REPORTED_THRESHOLD",
+        "budget_note":"Порог сравнивается после ответа провайдера и не ограничивает фактический расход.","model_calls":1}
+
 def run_external(payload):
     company_id=str(payload.get("company_id") or "").strip()
     event_id=str(payload.get("event_id") or "").strip()
@@ -54,12 +66,8 @@ def run_external(payload):
     analysis=generated["analysis"]
     adjustments=stage2_analyzer._apply_evidence_guards(analysis,profile,news)
     raw_usage=generated.get("usage") or {}
-    cost=raw_usage.get("cost_rub",raw_usage.get("costRub"))
-    try: cost=float(cost) if cost is not None else None
-    except (TypeError,ValueError): cost=None
-    usage={"input_tokens":raw_usage.get("prompt_tokens",raw_usage.get("input_tokens",0)),
-        "output_tokens":raw_usage.get("completion_tokens",raw_usage.get("output_tokens",0)),
-        "cost_rub":cost,"cost_reported":cost is not None,"budget_rub":budget,"budget_exceeded":cost is not None and cost>budget,"model_calls":1}
+    usage=_summarize_usage(raw_usage,budget)
+    cost=usage["cost_rub"]
     return {"companyId":company_id,"eventId":event_id,"analysis":analysis,"news":news,
         "guardAdjustments":adjustments,"qualityWarnings":generated.get("quality_warnings",[]),
         "facts":[{"field":k,"value":v,"type":"fact"} for k,v in profile.items() if k in {"SYNTHETIC_U","MAINOKVED_CODE","MAINOKVED_NAME","REGION","CL_PRODUCT_LOA_MARK","CL_PRODUCT_DEP_MARK","CL_PRODUCT_GAR_MARK"}],

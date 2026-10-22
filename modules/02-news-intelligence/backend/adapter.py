@@ -100,10 +100,10 @@ def run_external(payload):
     runner = ROOT / "modules" / "02-news-intelligence" / "backend" / "run.mjs"
     try:
         result = subprocess.run(["node", str(runner)], input=json.dumps(value, ensure_ascii=False), capture_output=True,
-            text=True, encoding="utf-8", cwd=ROOT, timeout=100)
+            text=True, encoding="utf-8", cwd=ROOT, timeout=180)
     except subprocess.TimeoutExpired:
         raise ExternalAIRunError(
-            "T08/T09 не ответил за 100 секунд. Стоимость завершённых запросов неизвестна; проверьте кабинет Polza перед повтором.",
+            "T08/T09 не ответил за 180 секунд. Стоимость завершённых запросов неизвестна; проверьте кабинет Polza перед повтором.",
             "POLZA_RUN_TIMEOUT",
             {"costReported": False, "budgetRub": budget},
         )
@@ -144,5 +144,4 @@ def run_local(payload):
         "t09LocalMatches":match_data.get("matches",[]),"inputCharacters":len(article),
         "limitations":["T08-классификация требует ручного запуска разрешённой модели. Локальный режим выполняет только T09-векторный поиск."],
         "provenance":{"kind":"local T09 embedding and archive search","sources":["T09 local-hash-tfidf-v1","local news archive"],"externalCalls":0,"writes":"none"}}
-
 

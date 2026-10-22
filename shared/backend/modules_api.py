@@ -304,4 +304,3 @@ def dispatch(method: str, raw_path: str, body: dict[str, Any] | None = None):
     finally:
         if external_lock_acquired:
             EXTERNAL_RUN_LOCK.release()
-
