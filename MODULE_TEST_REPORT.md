@@ -1,6 +1,47 @@
 # Modular Studio test report
 
-## Latest verification — round four, 2026-10-22
+## Latest verification — round five, 2026-10-22
+
+**Verdict:** все девять отдельных модулей повторно открыты и проверены в Chromium; их Fixture-запуски и UI-наборы сценариев прошли. `npm run test:all`, `npm run test:e2e:studio`, build и `git diff --check` прошли после последней UX-правки. Это подтверждает доступность маршрутов и исполнение предусмотренных сценариев, но не точность AI-ответов и не качество ранжирования без независимой разметки. Общая готовность продукта остаётся **PARTIAL**.
+
+| Проверка | Статус | Подтверждение |
+|---|---|---|
+| Девять отдельных отчётов | PASS | Каждый модуль имеет самостоятельный подробный Round 5 отчёт со схемой работы, владельцами алгоритмов, API/данными, действиями UI, результатом, ограничениями и screenshots: [индекс отчётов](docs/module-reports/README.md). |
+| `npm run test:all` | PASS | Сборка TypeScript/Vite; 8 root Python tests, 94 analytics tests, T08/T09/T10 и pipeline suites; все девять isolated module suites. Все команды завершились с кодом 0 после UX-правки. |
+| `npm run test:e2e:studio` | PASS для Studio; PARTIAL для прямого продукта | Chromium увидел 9 карточек и открыл 9 маршрутов, запустил Fixture и UI-набор каждого модуля: 30 prepared scenarios, `errors=[]`. Прямой product E2E не получил `ALFA_E2E_LOCAL_COMPANY_IDS`; ручной read-only путь продукта с выбором компании, лентой, источником и переключением компании прошёл отдельно. |
+| Адаптивность | PASS для Studio | E2E измерил viewport/content `1440/1440`, `1280/1280` и `390/390`; comparison `326/326`; ошибок страницы нет. Это покрывает Studio-модули. Прямой product mobile E2E не измерялся. |
+| Внешний AI — News Intelligence | PARTIAL | Один ручной запрос Polza только на синтетических статье/кандидате завершился: DeepSeek V4.1 Flash, 21 provider/model request, 21 806 input и 14 021 output tokens, 0,98417155 ₽ при настроенном лимите 1 ₽. T08/T09 вернули результат, но выполнение заняло несколько минут; UI не показывал промежуточные этапы/usage. Это доказывает путь провайдера, не семантическую точность. |
+| Внешний AI — AI Agent Studio | PARTIAL | Один ручной запрос с выбранными локальными профилем/событием, разрешённый пользователем: 1 model request, 3 621 token, 0,05797968 ₽ при лимите 0,25 ₽. Execution `partial`, `get_company_profile`/`get_event_facts` не вызваны, sources пусты: агент не провёл запланированную проверку. Повтора не было. |
+| Свежие платные вызовы | PASS / учёт за Round 5 | Два разрешённых запуска, 22 provider/model requests суммарно и 1,04215123 ₽ по сообщённой провайдером стоимости. Другие AI-модули в этом проходе не вызывались; cumulative spend за предыдущие исторические проходы не пересчитывался. |
+| Безопасность данных | PASS с ограничениями | Исходные CSV/SQLite и история исследований не очищались/не редактировались. Скриншоты и отчёты содержат синтетические или пустые состояния; значения выбранных локальных профиля/события не публиковались. Один пользовательски разрешённый ручной запрос Agent отправил выбранный локальный контекст во внешний AI. |
+
+### Статус модулей в Round 5
+
+| № | Модуль | Итог |
+|---:|---|---|
+| 01 | News Collector | **PARTIAL** — Fixture 3/3 и 8 unit tests; live RSS не запускался, чтобы не добавлять публикации в постоянную SQLite. |
+| 02 | News Intelligence / T08-T09 | **PARTIAL** — Fixture 4/4 и suite PASS; один синтетический Polza запуск завершился, но был медленным. |
+| 03 | Business Intelligence | **PARTIAL** — synthetic graph и suite PASS; внешний режим не запускался, он читает выбранный ID из локальных CSV и передаёт контекст провайдеру. |
+| 04 | Personalization | **PARTIAL** — fixture сравнение двух компаний работает; качество ранжирования `NOT_EVALUATED` без независимой разметки. Local Data в этом стенде заблокирован из-за отсутствующего profile CSV и риска пересборки SQLite. |
+| 05 | Impact Analysis | **PARTIAL** — Fixture/evidence guard проходят; неполная связь остаётся `unclear`; свежий внешний прогон не выполнялся. |
+| 06 | Bank Research / RAG | **PARTIAL** — Fixture и read-only Local Data выдали 5 лексических hits, пустой запрос дал понятную ошибку; семантическая применимость не измерена. |
+| 07 | AI Agent Studio | **PARTIAL** — Fixture suite проходит; единственный live запуск не вызвал запланированные evidence tools и вернул пустой список источников. |
+| 08 | Evidence Verification | **PARTIAL** — синтетическая точная цитата получила `supported`; смысловая применимость этим тестом не проверялась. |
+| 09 | Alfa Insight Product | **PARTIAL** — read-only product путь проверен; чат/deep research не запускались, потому что до submit интерфейс не показывает полный payload, который отправит внешнему AI. |
+
+### Исправление после повторного прогона
+
+- Долгое ожидание внешнего AI в общем Studio Workbench выглядело как зависание. Во время ручного T08/T09 запуска кнопки были блокированы, но интерфейс не показывал длительность, цену ещё нельзя было знать, а отдельный прогресс не передавался. Добавлен честный elapsed timer и пояснение: запрос может идти несколько минут, usage/cost появятся после ответа, отдельные этапы сейчас не транслируются, повторно отправлять запрос не нужно. Live-вызов для проверки исправления не повторялся; TypeScript/Vite build, все suites и Chromium E2E прошли после изменения.
+
+### Открытые проблемы
+
+- Агентный провайдер может вернуть итог без запрошенных инструментальных доказательств. `partial` и пустой sources list должны оставаться видимыми; до изменения orchestrator нельзя трактовать такой результат как завершённое исследование.
+- UI budget в AI-запросах проверяется по usage после ответа, а не гарантирует жёсткий spend cap перед отправкой.
+- Независимых gold labels нет для Personalization и Bank Research; их `PASS` означает выполнение алгоритма/контракта, а не точность.
+- Impact Analysis external path не подтверждён в этом проходе; ранее найденный обход канонического evidence/RAG остаётся открытым.
+- Чат/deep research основного продукта требуют прозрачного preview отправляемых данных и отдельной ручной проверки.
+
+## Историческая проверка — round four, 2026-10-22
 
 **Verdict:** `npm run test:all`, `npm run test:e2e:studio`, production build and `git diff --check` pass. Chromium exercised all nine Studio modules, their algorithms on prepared fixtures, fixture suites and repeated runs: 30 scenarios total, no browser page/console errors, no horizontal overflow at tested 1440, 1280 and 390 px. Separate live browser checks used local data for Personalization, Impact Analysis input loading, Bank Research and the customer product. The mobile company-switch regression was reproduced, fixed and retested. This confirms execution and interface paths, not general model or ranking accuracy. Overall readiness remains **PARTIAL** because several live/external workflows and independent quality oracles are unavailable.
 

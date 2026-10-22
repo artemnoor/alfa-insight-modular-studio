@@ -50,6 +50,7 @@ export function ModuleWorkbench({ spec }: Props) {
   const [localDataAvailable, setLocalDataAvailable] = useState(false)
   const [externalAIAvailable, setExternalAIAvailable] = useState(false)
   const [busy, setBusy] = useState('')
+  const [runElapsedSeconds, setRunElapsedSeconds] = useState(0)
   const [result, setResult] = useState<ModuleRunResponse | null>(null)
   const [testRun, setTestRun] = useState<ModuleTestSuiteResponse | null>(null)
   const [error, setError] = useState('')
@@ -57,6 +58,17 @@ export function ModuleWorkbench({ spec }: Props) {
   const [sourceCatalog, setSourceCatalog] = useState<any>(null)
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, { value: string; label: string }[]>>({})
   const [optionSearch, setOptionSearch] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (busy !== 'run' || mode !== 'external_ai') {
+      setRunElapsedSeconds(0)
+      return
+    }
+    const startedAt = Date.now()
+    setRunElapsedSeconds(0)
+    const timer = window.setInterval(() => setRunElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000)
+    return () => window.clearInterval(timer)
+  }, [busy, mode])
   const agentResult = result?.data as Record<string, any> | undefined
   const resultDescription = result?.mode === 'live_feed'
     ? 'Результат реального запроса к публичному источнику. Сбор и ошибки источника отражены ниже.'
@@ -238,7 +250,7 @@ export function ModuleWorkbench({ spec }: Props) {
         <div className="module-panel-title"><div><h2>Результат</h2><p>{resultDescription}</p></div>{result && <span className={`module-badge module-badge--${statusTone(result.validation?.status)}`}>{result.validation?.status || result.status}</span>}</div>
         {error && <div className="module-error module-result-error" role="alert">{error}</div>}
         {!result && !testRun && !busy && !error && <div className="module-empty"><strong>{mode === 'external_ai' ? 'Реальный AI-анализ готов к ручному запуску' : mode === 'local_data' ? 'Локальные данные готовы к запуску' : mode === 'live_feed' ? 'Живая RSS-лента готова к сбору' : 'Фикстурный сценарий готов к запуску'}</strong><span>{mode === 'external_ai' ? 'Нажмите кнопку только после выбора реальных входных данных и проверки раскрытия передачи модели.' : mode === 'local_data' ? 'Данные читаются локально; внешний AI не вызывается.' : mode === 'live_feed' ? 'Запрос к публичному RSS выполняется только после нажатия кнопки.' : 'Этот режим использует подготовленные данные для бесплатной проверки потока.'}</span></div>}
-        {busy && <div className="module-loading"><span className="module-spinner" />{busy === 'tests' ? `Выполняю набор из ${scenarios.length} сценариев…` : 'Передаю данные адаптеру и запускаю алгоритм…'}</div>}
+        {busy && <div className="module-loading" role="status" aria-live="polite"><span className="module-spinner" />{busy === 'tests' ? `Выполняю набор из ${scenarios.length} сценариев…` : mode === 'external_ai' ? <div><span>Внешний AI обрабатывает запрос — прошло {String(Math.floor(runElapsedSeconds / 60)).padStart(2, '0')}:{String(runElapsedSeconds % 60).padStart(2, '0')}.</span><small>Исследование может занять несколько минут. Число вызовов, токены и стоимость появятся после ответа; отдельные этапы пока не передаются. Не отправляйте запрос повторно.</small></div> : 'Передаю данные адаптеру и запускаю алгоритм…'}</div>}
         {result && <>
           {result.validation?.status === 'NOT_EVALUATED' && <p className="module-result-inline-note">Запуск выполнен, но для этих входных данных нет эталонных проверок. Результат не оценён.</p>}
           {spec.renderResult

@@ -1,6 +1,24 @@
 # Remaining issues
 
-## Update after round 4 (2026-10-22)
+## Current status after Round 5 (2026-10-22)
+
+All nine modules were reopened and exercised in Chromium. Their fixture UI runs, module suites, and the nine-route Studio E2E passed. A new external-AI loading message now shows elapsed time and tells users that stage-level progress and exact usage are only available after completion; the full build and E2E passed after this UX change. Overall product readiness remains **PARTIAL**.
+
+Two new live requests completed in this round: News Intelligence on synthetic input reported 21 provider/model calls and **0.98417155 ₽**; AI Agent on a manually selected local profile/event reported one model call and **0.05797968 ₽**. Round 5 known spend is **1.04215123 ₽**; cumulative historical spend is not recalculated here.
+
+### Open findings
+
+1. **P1 — AI Agent can finish without executing its evidence plan.** In the live run the model returned `partial`, called no planned `get_company_profile` or `get_event_facts` tools, and produced no source evidence. The UI exposes that partial state, but the orchestrator must enforce required checks or refuse to present an ungrounded conclusion as a completed research result.
+2. **P1 — External AI thresholds are post-response checks, not guaranteed spend caps.** The News Intelligence request stayed below its displayed 1 ₽ threshold, but used 21 provider/model requests and took several minutes. Add provider-side spending limits or a conservative preflight/reservation before calling a threshold a cap.
+3. **P1 — Impact Analysis external route bypasses its canonical evidence pipeline.** The existing `run_external` path omits canonical Bank RAG retrieval and evidence checks. Route the UI through the canonical analyzer before treating external output as evidence-backed.
+4. **P2 — Several optional external modes remain unverified.** Business Intelligence, Impact Analysis, Bank Research, Evidence Verification and the product chat/deep research were not called in Round 5. Product chat/research was specifically skipped because the UI does not preview the complete payload before submission. Readiness/allowlist status is not proof of successful inference.
+5. **P2 — No independent quality oracle exists for Personalization or Bank Research.** Fixture and Local Data runs establish execution, but not ranking accuracy or semantic relevance. Reviewed labels are needed before reporting Precision@K, Recall@K, NDCG, or document relevance as measured.
+6. **P2 — Product history and API remain difficult to audit.** History rows omit some company/event context and cost; direct product API routes remain a legacy unversioned surface. The read endpoint's SQLite connection may update journal metadata.
+7. **P2 — Business graph and source coverage are limited.** The graph is a bounded static SVG (up to 15 nodes), payment amounts have unknown currency/period, and live RSS outage behavior was not freshly exercised because collection writes to persistent SQLite.
+
+The detailed per-module evidence is in [the nine Round 5 reports](docs/module-reports/README.md). No source CSV, SQLite database, or research history was cleared or edited during this pass.
+
+## Historical note — update after round 4 (2026-10-22)
 
 `npm run test:all`, `npm run test:e2e:studio`, production build and `git diff --check` pass. All nine fixture routes and 30 scenarios passed; a separate real-data browser pass exercised local ranking, profile/event input loading, RAG retrieval, product source display and the mobile company-switch fix. Evidence Verification now rejects the synthetic 19%/12% percentage mismatch. A new T08/T09 attempt cost 0.447428 ₽ and did not complete T08 taxonomy selection. Previously priced attempts total approximately 3.60683315 ₽; another timeout lacks final cost, so aggregate charges remain unknown against the 5 ₽ ceiling. No additional provider calls were made.
 
