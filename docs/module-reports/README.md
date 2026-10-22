@@ -4,23 +4,29 @@
 
 | № | Модуль | Итог | Отчёт |
 |---|---|---|---|
-| 01 | News Collector | PASS на фикстурах; один публичный RSS fetch ранее подтверждён | [01 — News Collector](01-news-collector.md) |
-| 02 | News Intelligence / T08/T09 | PARTIAL: живой Polza-запрос завершился timeout, T09 не стартовал | [02 — News Intelligence](02-news-intelligence.md) |
-| 03 | Business Intelligence | PASS на фикстурах и локальном профиле; ограничения отображения графа | [03 — Business Intelligence](03-business-intelligence.md) |
-| 04 | Personalization | PASS на фикстурах; локальный happy path в этом проходе пропущен из-за потенциальной перестройки SQLite-кэша, нет gold-разметки | [04 — Personalization](04-personalization.md) |
-| 05 | Impact Analysis | PARTIAL: фикстуры проходят, Local Data только загружает входы, External AI не проверялся | [05 — Impact Analysis](05-impact-analysis.md) |
-| 06 | Bank Research / RAG | PARTIAL: локальный BM25 работает, семантическая релевантность не измеряется | [06 — Bank Research](06-bank-research.md) |
-| 07 | AI Agent Studio | PASS на фикстурах с реальным orchestrator и детерминированными tools; live-агент не запускался | [07 — AI Agent Studio](07-ai-agent.md) |
-| 08 | Evidence Verification | PASS на exact-check; live semantic review не запускался | [08 — Evidence Verification](08-evidence-verification.md) |
-| 09 | Alfa Insight Product | PARTIAL: локальные сценарии доступны, внешний AI/chat в этой проверке не оплачивались | [09 — Alfa Insight Product](09-alfa-product.md) |
+| 01 | News Collector | PASS для проверенных fixture-сценариев, повторной обработки и прежнего публичного RSS; остальные RSS-источники и outage не проверены | [01 — News Collector](01-news-collector.md) |
+| 02 | News Intelligence / T08/T09 | PARTIAL: Fixture/Local Data и ошибки проверены; две внешние попытки не закончили T08/T09, одна превысила согласованный потолок 1 ₽ (фактически 1,03465749 ₽); внешние вызовы остановлены | [02 — News Intelligence](02-news-intelligence.md) |
+| 03 | Business Intelligence | PARTIAL: фикстуры и локальные профили работают; суммы не показывают валюту/период, граф остаётся списком | [03 — Business Intelligence](03-business-intelligence.md) |
+| 04 | Personalization | PARTIAL: фикстуры и сравнение компаний работают; локальный успешный расчёт пропущен из-за возможной перестройки SQLite-кэша, нет gold-разметки | [04 — Personalization](04-personalization.md) |
+| 05 | Impact Analysis | PARTIAL: фикстуры проходят, Local Data только загружает входы; внешний маршрут обходит канонические RAG/evidence-проверки и не запускался | [05 — Impact Analysis](05-impact-analysis.md) |
+| 06 | Bank Research / RAG | PARTIAL: фикстуры и локальный BM25 проходят; смысловая релевантность не измерена, источники без ссылок | [06 — Bank Research](06-bank-research.md) |
+| 07 | AI Agent Studio | PARTIAL: оркестратор реально работает на fixtures с адаптивным планом; Local Data только загружает входы; live-модель не вызывалась | [07 — AI Agent Studio](07-ai-agent.md) |
+| 08 | Evidence Verification | PARTIAL: exact-проверка работает на fixtures/Local Data; независимая семантическая проверка не подтверждена | [08 — Evidence Verification](08-evidence-verification.md) |
+| 09 | Alfa Insight Product | PARTIAL: локальная лента, событие, профиль, история и мобильная навигация работают; чат и глубокое исследование в контролируемом ретесте не отправлялись | [09 — Alfa Insight Product](09-alfa-product.md) |
 
 ## Скриншоты
 
-- [News Collector fixture](assets/01-news-collector-fixture.png)
-- [Polza timeout в News Intelligence](assets/02-news-intelligence-polza-timeout.png)
-- [Impact Analysis при отсутствующем тексте](assets/05-impact-analysis-missing-text.png)
-- [AI Agent Studio fixture](assets/07-ai-agent-fixture.png)
-- [Evidence Verification Local Data](assets/08-evidence-verification-local.png)
+- [News Collector retest](assets/01-news-collector-retest.png)
+- [News Intelligence safe-state retest](assets/02-news-intelligence-retest.png)
+- [News Intelligence safe error state](assets/02-news-intelligence-safe-error-retest.png)
+- [Polza budget overrun in News Intelligence](assets/02-news-intelligence-polza-budget-guard.png)
+- [Business Intelligence retest](assets/03-business-intelligence-retest.png)
+- [Personalization retest](assets/04-personalization-retest.png)
+- [Impact Analysis retest](assets/05-impact-analysis-retest.png)
+- [Bank Research retest](assets/06-bank-research-retest.png)
+- [AI Agent Studio retest](assets/07-ai-agent-retest.png)
+- [Evidence Verification retest](assets/08-evidence-verification-retest.png)
+- [Alfa Insight first screen](assets/09-alfa-product-retest.png)
 
 ## Сводные результаты
 

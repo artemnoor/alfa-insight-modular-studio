@@ -23,14 +23,17 @@ External mode is manual. With matches, it sends the query and up to five retriev
 - A run returns contract v1 `{data, provenance, validation:{status, checks}}`. A custom query has no gold assertion, so status is `NOT_EVALUATED`; errors use the shared `{error:{code,message,detail}}` shape.
 - There is no indexed-document listing, index status/error endpoint or document-selection API for this module. The UI renders a source link if a returned chunk has `url`.
 
-## Browser pass
+## Browser retest (2026-10-22)
 
-Used Chromium via Playwright CLI at `http://127.0.0.1:5173/studio/bank-research` in isolated session `module-qa-04-06`; did not click External AI.
+Opened `http://127.0.0.1:5173/studio/bank-research` in Chromium through Playwright at 1440 × 960. I did not click the External AI action or transmit bank-document fragments to Polza.
 
-1. Fixture mode, default infrastructure-credit query: PASS. One synthetic page was returned with its page number, publication date, BM25 score, matched terms and fixture extraction label. The UI explicitly warns that lexical match does not prove applicability or the bank’s position.
-2. Local Data query with the terms for infrastructure projects and lending returned no relevant material. A deposit-rate query also returned no relevant material. A different local query using risk-coefficient and credit terminology returned two pages (BM25 scores `4.63082` and `3.05114`). The output content was not copied into this report. All local runs reported zero external calls and read-only provenance.
-3. Cleared the Local Data query and ran again. The UI displayed the clear validation message “Введите поисковый запрос.”; the API returned HTTP 400. The browser console records that expected 400 as a network error, but the user sees a human-readable field error rather than a traceback.
-4. The initial browser pass found that switching from Fixture to Local Data retained the previous result. Fixed after that pass in `shared/frontend/ModuleWorkbench.tsx`; switching mode now clears result/test/error state. Studio E2E passed after the change, though that script does not assert this exact transition separately.
+1. On opening, the selected mode was `External AI`. Switched explicitly to `Fixture`, clicked **«Запустить алгоритм»**, and received HTTP 200 with `validation=PASS`, one synthetic page and `externalCalls=0`. The page displays its number, publication date, BM25 and ranking scores, matched terms, extraction label and excerpt. It also warns that lexical similarity does not prove applicability or the bank’s position.
+2. Clicked **«Запустить 3 теста»**. All three prepared scenarios passed. The API returned `mode=Fixture`, `status=PASS`.
+3. Switched to `Local Data`; the old fixture result cleared immediately (`staleCleared=true`). Ran the default local query against the configured index. The API returned HTTP 200, five matches, `validation=NOT_EVALUATED`, provenance `local bank knowledge index (read only)`, `externalCalls=0`. The UI showed page numbers, document titles, excerpts, ranking details and matched terms. Document text was not copied to this report. No open-source link appeared in the returned results, so the underlying document could not be opened from the card.
+4. Cleared the search field and clicked run. The UI showed “Введите поисковый запрос.” and the API returned HTTP 400. This was an expected validation response; the browser logged the generic failed-resource 400, with no page exception or traceback. At 390 px the error state remained within the viewport.
+5. Measured the fixture result at 1440, 1280 and 390 px: document width matched the viewport at all three sizes. A safe UI route to simulate a missing/corrupt production index is not provided; I did not rename or modify the live index. The existing isolated unit test uses a temporary index but does not exercise missing-index recovery through the browser.
+
+Screenshot: [`assets/06-bank-research-retest.png`](assets/06-bank-research-retest.png). It contains only the synthetic fixture result.
 
 ## Test commands and results
 
@@ -40,13 +43,15 @@ Used Chromium via Playwright CLI at `http://127.0.0.1:5173/studio/bank-research`
 
 | Mode | Status | Evidence |
 |---|---|---|
-| Fixture | **PASS** | UI returned expected synthetic page; 3/3 fixture scenarios and all module tests pass. |
-| Local Data | **PARTIAL** | Read-only index queried successfully, both empty and non-empty results behaved as documented; no gold labels make relevance `NOT_EVALUATED`. |
+| Fixture | **PASS** | Browser result and all 3 prepared scenarios passed; synthetic provenance and zero external calls confirmed. |
+| Local Data | **PARTIAL** | Browser retrieved five read-only local matches, but a custom query correctly has no gold assertion (`NOT_EVALUATED`); cards have no openable source link. |
 | External AI | **NOT RUN** | Не запускался в этой проверке. Статически режим требует ручного действия и отправляет поисковый запрос вместе с найденными фрагментами банковских документов. |
 
 ### Defects and recommendations
 
-1. **P2 — No independent gold relevance set or semantic retrieval validation.** Reproduce by running a custom Local Data query: result validation is `NOT_EVALUATED`, and the module exposes only BM25/matched-term evidence. The two concept-related query phrasings produced different empty/non-empty results, demonstrating sensitivity but not proving a false negative. Add reviewed query→page relevance labels and report retrieval metrics; assess semantic applicability separately from lexical ranking.
-2. **P2 — Indexed-document discovery and index health are absent.** The requested document list/selection and index/error status are not present in this UI/API. A user can search but cannot see corpus coverage or diagnose a stale/incomplete index. Add a metadata-only document catalog and index health endpoint without exposing document text by default.
-3. **P2 — Mode changes retain a previous result.** Reproduce by running Fixture and switching to Local Data. The old fixture data stays displayed under the new mode’s panel description. Clear results on mode change or label the result’s original mode persistently.
-4. **Privacy control — Local search stays local; external interpretation exports bank content.** `run_external` transmits the query and up to five retrieved bank-document fragments (up to 3,000 characters each). The UI discloses this scope and the mode is manual. Before enabling this mode for confidential or licensed materials, gate by document classification/approval and show the selected snippets’ provenance at the confirmation point. No fragments were sent during this QA pass.
+1. **P2 — Search relevance has no independent gold labels.** Reproduce by running any custom Local Data query: it returns a BM25 result and `NOT_EVALUATED`. The score and matched terms are useful retrieval diagnostics but cannot establish semantic applicability. Add reviewed query→page labels and retrieval metrics; assess use for the current event separately.
+2. **P2 — Users cannot discover indexed documents or open a source from results.** There is no document catalog/index health route in the module UI/API, and the five cards from this run had no URL. Users can inspect a title, page number and excerpt but cannot navigate to the document or check surrounding context. Add a metadata-only catalog, index freshness/error status and a vetted document link where available.
+3. **P2 — Missing-index recovery is unverified.** There is no safe UI switch for an absent/corrupt index. Existing tests verify a temporary valid local index, not the missing-index state. Add a dependency-failure fixture that leaves the production index untouched and asserts a short actionable message.
+4. **External-data boundary — External AI interpretation sends bank material.** `run_external` transmits the query and up to five retrieved fragments (up to 3,000 characters each) to Polza. The UI discloses this scope and requires a manual action. No fragments were sent in this retest. Keep the manual gate and show each outgoing fragment’s source/approval before sending confidential or licensed content.
+
+The earlier finding that changing modes retains a stale result is **resolved in the shared ModuleWorkbench**. Reproduced this time: switching Fixture → Local Data removed the old fixture result before the local run.

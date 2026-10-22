@@ -41,12 +41,13 @@ export const moduleSpec = {
     },
     {
       "name": "max_cost_rub",
-      "label": "Лимит стоимости (₽, максимум 5)",
+      "label": "Порог расходов для остановки шагов (₽, максимум 5)",
       "kind": "number",
       "initial": "1",
       "min": 0.05,
       "max": 5,
-      "externalOnly": true
+      "externalOnly": true,
+      "helperText": "Проверяется после ответа модели; уже отправленный запрос может превысить порог."
     }
   ],
   "highlights": [

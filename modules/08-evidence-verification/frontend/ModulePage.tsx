@@ -34,7 +34,7 @@ export const moduleSpec = {
       "rows": 6,
       "placeholder": "[{\"chunk_id\":\"p1\",\"doc_title\":\"…\",\"page_number\":1,\"text\":\"…\"}]"
     },
-    { "name": "max_cost_rub", "label": "Лимит стоимости AI (₽, максимум 5)", "kind": "number", "initial": "1", "min": 0.05, "max": 5, "externalOnly": true }
+    { "name": "max_cost_rub", "label": "Порог проверки расходов AI (₽, максимум 5)", "kind": "number", "initial": "1", "min": 0.05, "max": 5, "externalOnly": true, "helperText": "Проверяется после ответа; один уже отправленный запрос может превысить порог." }
   ],
   "highlights": [
     {

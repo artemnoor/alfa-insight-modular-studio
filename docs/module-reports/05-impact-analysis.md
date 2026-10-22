@@ -1,56 +1,146 @@
-# 05 — Impact Analysis
+# 05 — Анализ влияния: повторный пользовательский аудит
 
-## Verdict
+Дата проверки: 2026-10-22
+Результат относится к ветке `codex/qa-verification-2026-10-22`.
 
-**Fixture: PASS for the evidence-guard scenarios. Local Data: PARTIAL — it safely loads inputs but deliberately does not run an impact analysis. External AI: NOT RUN.** The fixture demonstrates useful guardrails and concrete verification actions. The external adapter still has two high-priority gaps: a requested cost threshold is checked only after the model call, and the adapter bypasses the module’s canonical RAG and evidence-verification pipeline. UI copy now states that the number is a post-response notification threshold, not a spending cap.
+## Итог
 
-## Owner and data flow
+**Фикстурный сценарий работает и корректно понижает неподтверждённые выводы. Local Data безопасно загружает исходные данные, но не выполняет анализ влияния. External AI в этом проходе не запускался.** Модуль пока нельзя считать завершённым: внешний адаптер обходит канонический RAG и проверку банковских цитат, порог цены применяется только после ответа, а статус RSS-выдержки теряется в представлении результата. Обнаруженное в начале проверки сохранение старого результата при смене фикстуры исправлено в общем workbench и подтверждено повторным кликом.
 
-- Adapter: `modules/05-impact-analysis/backend/adapter.py:9-14` (fixture input and guard); `:16-31` (read-only local input selection); `:33-64` (external path).
-- Canonical impact core: `modules/05-impact-analysis/backend/stage2_analyzer.py:312-477` (evidence and uncertainty guards); `:478-552` (`analyze_company`, RAG retrieval, model request, exact quote check and semantic support verification).
-- Current provider caller actually used by the adapter: `modules/03-business-intelligence/backend/stage1_analyzer.py:117-159` (`analyze_one`, direct provider request and schema checks); compatibility wrapper: `drive_data_analysis_2026-10-20/stage1_analyzer.py`.
-- API: `shared/backend/modules_api.py:61-75, 107-141, 162-290`.
-- UI: `modules/05-impact-analysis/frontend/ModulePage.tsx:4-13` (results); `:15-70` (fields, disclosure and modes).
-- Fixtures/tests: `modules/05-impact-analysis/fixtures/scenarios.json`; `modules/05-impact-analysis/tests/test_module.py:7-17`.
+Повторный тест выполнен через настоящий Chromium и Playwright CLI по адресу `http://127.0.0.1:5173/studio/impact-analysis`. Внешний AI и любые платные вызовы не запускались по заданному ограничению теста. Скриншот содержит только синтетическую фикстуру: [05-impact-analysis-retest.png](assets/05-impact-analysis-retest.png).
 
-Expected canonical flow is selected company and processed event → retrieval of bank snippets → `stage2_analyzer.analyze_company` → evidence guard → exact quote verification → semantic quote assessment → returned analysis, citations and warnings. The current adapter’s external flow is instead company/event lookup → `stage1_analyzer.analyze_one` → `_apply_evidence_guards`. The latter sends profile and news to the provider but does not call the module’s RAG retrieval, exact quote verifier or semantic verifier.
+## Владелец логики и фактический поток данных
 
-The local path reads one unambiguous company row and one processed event, returning facts, source link and `analysisStatus: "not_run"` (`adapter.py:16-31`). It is read-only and does not pretend to produce an analysis. Fixture `run` uses synthetic data and `_apply_evidence_guards`. The guard limits RSS excerpts, turns missing-text results into `unclear`/low confidence, blocks unsupported direct company claims and contains a specific guard for narrow critical-infrastructure credit programs (`stage2_analyzer.py:312-381`).
+- Канонический владелец анализа влияния — `modules/05-impact-analysis/backend/stage2_analyzer.py`.
+- Точка входа модуля — `modules/05-impact-analysis/backend/adapter.py`.
+- Общий API — `shared/backend/modules_api.py`.
+- Интерфейс — `modules/05-impact-analysis/frontend/ModulePage.tsx` и общий `shared/frontend/ModuleWorkbench.tsx`.
+- Подготовленные сценарии — `modules/05-impact-analysis/fixtures/scenarios.json`.
 
-## API contract
+### Канонический анализ, описанный в коде владельца
 
-- `GET /api/modules/impact-analysis/health` and `/options` expose availability and dynamically searched company/event options. The options route is shared with the AI agent (`modules_api.py:199-225`).
-- `POST /api/modules/impact-analysis/run` accepts `{mode, scenarioId?, input}`. Fixture JSON fields: `profile`, `news`, `analysis`; Local Data fields: `company_id`, `event_id`; external mode also accepts `max_cost_rub`.
-- Response is contract v1 with `data`, `provenance`, and validation. Local runs have no expected scenario assertions and should be `NOT_EVALUATED`; invalid IDs return `400 / INVALID_INPUT`.
-- The UI explicitly discloses that External AI receives the full selected profile, event text/metadata and source URL.
+`stage2_analyzer.analyze_company` получает компанию, событие и, при необходимости, готовый граф связей. По умолчанию он запрашивает до пяти фрагментов через `stage2_rag.retrieve`, затем включает профиль, событие, граф и найденные выдержки Альфа-Банка в запрос к модели. До генерации промпт предписывает считать фактами только проверенные сведения из источника, учитывать `excerpt`/`missing`, не выводить кредит, долг или участие в проекте только из ОКВЭД и флагов продукта, а при недостатке данных возвращать `unclear`.
 
-## Browser pass
+После ответа канонический путь проверяет схему и ID компании, применяет детерминированные guards, сверяет точное присутствие каждой банковской цитаты через `evidence_core._verify_support`, а затем дополнительно оценивает смысловую связь прошедших точную сверку цитат с выводом. В ответе предусмотрены retrieval-результаты, `verified_bank_support`, точные и смысловые проверки цитат, предупреждения и использование токенов. Смысловая проверка делает дополнительный запрос к той же разрешённой модели/провайдеру; это не независимая внешняя экспертная оценка.
 
-Used Chromium through Playwright CLI at `http://127.0.0.1:5173/studio/impact-analysis` in isolated session `module-qa-04-06`. No External AI button was clicked.
+### Что фактически вызывает текущий адаптер
 
-1. Fixture mode, default **«Целевое кредитование»**: PASS. Output was `unclear` relevance, `unclear` impact and low confidence. It explained that profile/industry/product flags do not establish project participation or a target loan; it listed concrete checks for project participation and the bank’s application of the measure, plus missing facts.
-2. The first pass on **«Нет текста новости»** found an unsupported default `why_it_matters` statement. The guard was fixed and the same missing-text case was repeated on 2026-10-22: `why_it_matters` now says the company link was not assessed, the claims/evidence are empty, and the only action is to inspect the source.
-3. Switched to Local Data, searched the company ID and filtered the processed archive to the critical-infrastructure lending news, then ran **«Загрузить профиль и событие»**. The UI loaded the event and profile facts from local data, showed the source URL and `content_status=full`, clearly said “Внешний AI-анализ не запускался”, displayed `model: не запускалась`, and provenance reported zero external calls. `analysis` remained empty and run status was `NOT_EVALUATED`, so this is input retrieval only, not a local impact algorithm.
-4. The initial browser pass found that switching between Fixture and Local Data retained the previous result. Fixed in `shared/frontend/ModuleWorkbench.tsx`: a mode switch clears the current result/test output/error, and mode changes are disabled during an in-flight request. Studio E2E passed after this change; the specific stale-result transition was not separately asserted by the shared E2E script.
+- **Fixture:** `adapter.run` создаёт синтетические профиль, новость и черновик анализа и вызывает только `stage2_analyzer._apply_evidence_guards`. Это быстрый детерминированный guard-тест, а не полный RAG или AI-анализ.
+- **Local Data:** `adapter.run_local` читает одну строку профиля и одно обработанное событие, показывает ограниченный набор фактов и ссылку на первоисточник, возвращает `analysisStatus: "not_run"` и `provenance.externalCalls: 0`. Вызова анализатора и записи истории нет. Это безопасная загрузка входов, а не локальный алгоритм влияния.
+- **External AI:** `adapter.run_external` загружает профиль и статью, проверяет наличие текста и значения поля стоимости, затем вызывает `stage1_analyzer.analyze_one` через legacy thin wrapper, применяет `stage2_analyzer._apply_evidence_guards` и формирует сводку использования. Этот путь **не вызывает** канонический `stage2_analyzer.analyze_company`: в нём нет `stage2_rag.retrieve`, точной сверки цитат, смысловой проверки цитат и результата `verified_bank_support`. Таким образом, существование канонического доказательного контура в коде ещё не означает, что им пользуется кнопка External AI.
 
-## Test commands and results
+Внешний адаптер отправил бы в Polza выбранный полный профиль, заголовок/текст события и URL источника. В этом проходе кнопка внешнего анализа не нажималась, поэтому отправок не было.
 
-`npm run test:module -- impact-analysis` — **PASS**: 4 Python unit tests and 3 fixture scenarios. Scenarios check target-credit uncertainty, excerpt confidence downgrade, and missing-text uncertainty, now including that causal prose, evidence and bank support are cleared when the publication text is missing. Unit tests also check that unreported provider cost is `NOT_REPORTED` and reported cost above the threshold is flagged post-response. They do not cover `run_local`, enforce a hard spend limit, or verify the external adapter’s selected algorithm.
+## Факты, гипотезы, причинная цепочка, действия и источники
 
-## Status and findings
+В фикстурном результате отдельно показан небольшой список фактов профиля. Гипотезы интерфейс строит из элементов `analysis.risks`; при защитном сценарии риски очищены, поэтому список гипотез пуст. Содержательный текст `why_it_matters` показывает условную связь и отказ от вывода о подтверждённом целевом займе. Для новости о критической инфраструктуре guard также очищает риски и возможности, задаёт `unclear` для релевантности и влияния, снижает уверенность и предлагает проверки участия в целевом проекте и применимости условий займа.
 
-| Mode | Status | Evidence |
+Между событием и компанией интерфейс не строит отдельную причинно-следственную схему. Условный канал изложен обычным текстом; ни переходы, ни поддерживающие их доказательства не перечисляются рядом. Поле `analysis.evidence`, возможный `bank_support` и retrieval-материалы не рендерятся основным экраном. Раздел «Данные и предположения» показывает только `data.facts` и `data.hypotheses`. Технический JSON доступен в раскрывающемся блоке, но он не заменяет человекочитаемую проверку каждого утверждения.
+
+В Local Data была показана ссылка на первоисточник выбранной публикации. Ссылка отображалась в интерфейсе, но в рамках этого повторного прогона отдельно не открывалась. Источники и цитаты Альфа-Банка через внешний маршрут не проверялись, поскольку External AI не запускался, а сам адаптер сейчас не вызывает RAG.
+
+## Протокол браузерной проверки
+
+| Шаг | Реальное действие | Результат |
 |---|---|---|
-| Fixture | **PASS** | UI target-credit and missing-text runs; 3/3 scenarios; module tests pass. |
-| Local Data | **PARTIAL** | Read-only profile/event lookup succeeded, but `analysisStatus=not_run`; API validation correctly says `NOT_EVALUATED`. No local impact computation is implemented in this mode. |
-| External AI | **NOT RUN** | Не запускался; статическая проверка выявила, что post-response threshold не является жёстким ограничителем, а adapter обходил канонический evidence pipeline. |
+| Открытие модуля | Открыт `/studio/impact-analysis` в headed Chromium; backend и набор сценариев загрузились. | Страница доступна. При первом открытии выбрался `External AI`, но отправки не произошло: интерфейс прямо говорит, что AI доступен только по отдельному действию. |
+| Набор проверок | Нажата кнопка «Запустить 3 теста». | Общий статус `PASS`; UI показал `PASS` для «Целевое кредитование», «Только RSS-фрагмент» и «Нет текста новости». Это настоящий POST в fixture endpoint, не чтение заранее сохранённого результата. |
+| Целевое кредитование | В `Fixture` нажата «Запустить алгоритм» с выбранным сценарием. | `PASS`; релевантность и влияние — `unclear`, уверенность низкая. Отдельно видны отсутствие подтверждённых рисков/возможностей, проверочные действия и недостающие сведения. В provenance указана синтетическая фикстура и ноль внешних вызовов. |
+| Переключение после результата | После результата изменён выбор на «Только RSS-фрагмент». | До общего изменения обработчика выбор сценария сохранял предыдущий результат. После обновления общего workbench HMR повторная смена сценария очистила результат и показала состояние готовности фикстуры. Повторная браузерная проверка подтвердила исправление. |
+| RSS-выдержка | Запущен выбранный сценарий «Только RSS-фрагмент». | `PASS`; уверенность `low`, влияние `unclear`, неподтверждённые риски и возможности не показаны, действия сводятся к проверке условий по депозитам. Однако строка полноты источника отображается как «не указана», хотя во входе фикстуры явно задан `content_status=excerpt`. |
+| Нет текста | Запущен сценарий «Нет текста новости». | `PASS`; связь и влияние остаются `unclear`, уверенность низкая, причинный текст говорит, что связь не оценена; риски, возможности, evidence и bank support пусты; действие — открыть первоисточник и проверить полный текст. Это безопасное поведение при отсутствии содержания. |
+| Local Data | Переключён режим; поиск по ID компании и по заголовку события, выбор результатов; нажата «Загрузить профиль и событие». | Загрузка завершилась. Интерфейс прямо сообщил, что внешний AI не запускался; `analysisStatus=not_run`, в результате показаны факты/публикация, provenance содержит `externalCalls=0`. Кнопка называется «Загрузить профиль и событие». Реальный профиль/событие не сохранены в отчёте или скриншоте. |
+| External AI | Кнопка не нажималась. | `BLOCKED` в этом проходе центральным ограничением бюджета: не отправлялись профиль клиента, текст события или банковские материалы; стоимость прогона — ноль. |
 
-Browser follow-up on 2026-10-22 selected the missing-text fixture, switched to Local Data to check that old output disappeared and the button described input loading, and recorded 0 browser errors. Screenshot: `assets/05-impact-analysis-missing-text.png`.
+Во время проверки dev proxy кратковременно вернул `502` на health/options/scenarios; UI показал `Backend: недоступен` и отключил действия. Прямой health API и proxy позднее отвечали успешно; перезагрузка страницы восстановила доступность. Я не делал вывод, что причина была в коде модуля, но у интерфейса нет автоматического повтора проверки health, поэтому восстановление было видно только после повторной загрузки.
 
-### Defects and recommendations
+## Оценка режимов
 
-1. **P1 — External spend cannot be capped at the requested value.** `run_external` validates `max_cost_rub`, then calls `analyze_one(...)` without passing a cost limit; actual cost is known only after the provider response. UI now calls this a post-response notification threshold, and API sets `budget_status=NOT_REPORTED` / `budget_exceeded=null` when Polza omits cost. This corrects the misleading claim but does not prevent an individual request from exceeding the threshold. Use a provider-supported preflight/server-side limit or remove the numeric limit and require explicit manual consent.
-2. **P1 — External adapter bypasses the Impact Analysis owner’s bank-evidence pipeline.** Reproduce statically: `run_external` calls module 03’s `stage1_analyzer.analyze_one`; it never calls `stage2_analyzer.analyze_company`. As a result, this UI route omits local Bank RAG retrieval, exact quote matching, semantic support checks and verified bank citations even though those exist in the canonical core. Route external execution through `analyze_company` and return `retrieval`, `verified_bank_support`, quote checks and warnings in the normal result contract.
-3. **FIXED — Missing-text fixture retained unsupported causal prose and evidence.** The guard now replaces the causal explanation with an explicit “not assessed” statement, clears risks, opportunities, evidence and bank support, and keeps the concrete action to inspect the original. The `missing` scenario asserts the change and passes.
-4. **FIXED — Local Data button wording implied an analysis had run.** The Local Data action is now “Загрузить профиль и событие”; the result continues to state `analysisStatus=not_run`.
-5. **FIXED — Previous-mode result remained visible after a mode switch.** Shared workbench now clears old output/error/test state and disables mode changes while a run is in progress; browser E2E passed after the change.
+| Режим | Статус | Основание |
+|---|---|---|
+| Fixture | **PASS** для трёх guard-сценариев | Пройдены через UI; целевой кредит, выдержка и пустой текст отображают ожидаемое понижение уверенности/неясность. Смена выбранного сценария очищает старый результат после общего исправления workbench. |
+| RSS excerpt | **PARTIAL** | Выводы ограничены и уверенность снижена, но статус полноты источника в карточке результата теряется. |
+| Local Data | **PARTIAL** | Настоящие данные загружаются read-only без внешнего вызова, однако анализа влияния в этом режиме нет. Это честно отражается `not_run`, но модуль нельзя изолированно использовать для локальной проверки анализа. |
+| External AI | **BLOCKED / NOT RUN** | Не запускался согласно централизованному ограничению расходов. Проверен статически по пути вызова и UI-копирайту. |
+| Bank RAG и проверка цитат в браузере | **BLOCKED / NOT EXERCISED** | Внешний путь не запускался; статический анализ показывает, что адаптер обходит эти этапы. |
+
+## Найденные проблемы
+
+### P1 — Внешняя кнопка обходит RAG и проверку банковских доказательств
+
+**Что произошло:** текущий `run_external` вызывает `stage1_analyzer.analyze_one`, а затем только `_apply_evidence_guards`. Он не использует канонический `analyze_company`, хотя тот владеет retrieval, exact quote check и semantic support check. В результате этой кнопкой нельзя получить подтверждённые источники Альфа-Банка для вывода.
+
+**Как воспроизвести:** статически проследить `adapter.run_external` → `analyze_one` и сравнить с `stage2_analyzer.analyze_company`. Внешний платный вызов не выполнялся.
+
+**Ожидаемое поведение:** пользовательский запуск проходит через один канонический владеющий анализатор и возвращает ссылки/страницы, точное совпадение цитат, их смысловой статус и предупреждения.
+
+**Рекомендация:** подключить адаптер к `stage2_analyzer.analyze_company`, передать retrieval/профиль/событие по контракту и отобразить проверенные evidence в UI. Не дублировать этапы в adapter.
+
+### P1 — Поле стоимости не ограничивает расходы
+
+**Что произошло:** поле `max_cost_rub` и подпись корректно называют значение порогом уведомления. Адаптер валидирует диапазон, но лишь после ответа считывает `usage.cost_rub`/`costRub` и сравнивает стоимость с порогом. При превышении ответ всё равно уже получен; если провайдер не сообщил сумму, результат имеет `NOT_REPORTED`. Это не hard cap и не гарантия соблюдения общего тестового бюджета.
+
+**Как воспроизвести:** посмотреть helper text в форме и последовательность `run_external` → `analyze_one` → `_summarize_usage`; External AI не нажимался.
+
+**Ожидаемое поведение:** до отправки должен действовать поддерживаемый провайдером/API лимит либо интерфейс должен явно описывать ограничение как постфактум уведомление без обещания остановить расход.
+
+**Рекомендация:** если провайдер не поддерживает preflight cap, переименовать числовой ввод в уведомительный порог и не называть его бюджетом/лимитом. Учитывать агрегированную стоимость всех вызовов, включая второй семантический вызов canonical evidence verifier, если он используется.
+
+### FIXED — После смены фикстуры экран мог показывать результат другого сценария
+
+**Что произошло:** при первой проверке смена селектора с «Целевое кредитование» на «Только RSS-фрагмент» оставляла предыдущий результат на экране. Во время этой общей проверки обработчик сценария был обновлён в `shared/frontend/ModuleWorkbench.tsx` так, чтобы сбрасывать результат, тесты, ошибку и пользовательские поля.
+
+**Как воспроизвести:** Fixture → запустить «Целевое кредитование» → изменить подготовленный сценарий на «Только RSS-фрагмент» и не запускать его сразу.
+
+**Повторная проверка:** после обновления кода повторно выполнен запуск целевой фикстуры, затем переключение на RSS. Старый результат исчез, появилось состояние «Фикстурный сценарий готов к запуску»; новое исследование при переключении не выполнялось.
+
+**Итог:** исправление подтверждено живым интерфейсом. Отдельная команда тестов после этого исправления в рамках данного пользовательского аудита не запускалась.
+
+### P2 — UI теряет `content_status` RSS-выдержки
+
+**Что произошло:** результат RSS-сценария снижает уверенность, но строка «Полнота источника» показывает «не указана». `adapter.run` возвращает анализ и guard adjustments без объекта `news`, откуда `ModulePage` берет `content_status`.
+
+**Как воспроизвести:** Fixture → «Только RSS-фрагмент» → «Запустить алгоритм» → проверить строку под описанием события.
+
+**Ожидаемое поведение:** карточка должна прямо маркировать источник как RSS-выдержку и указывать, что выводы ограничены доступным фрагментом.
+
+**Рекомендация:** вернуть `news.content_status` и источник в стандартном ответе fixture adapter и показывать это поле рядом с заголовком.
+
+### P2 — Факты и гипотезы видны частично, причинная цепочка и доказательства спрятаны
+
+**Что произошло:** UI показывает список whitelisted фактов и формирует гипотезы из рисков, но не отображает `analysis.evidence`, `bank_support`, retrieval и проверки цитат. Текст связи не разложен на отдельные причинные переходы с указанием факта/гипотезы. Внешний адаптер дополнительно не возвращает результаты канонического RAG-контура.
+
+**Как воспроизвести:** открыть результат фикстуры. Основная карточка показывает краткий вывод, действия и факты; раскрываемый технический JSON — единственное место для остальной структуры результата. В Local Data источником выступает только публикация.
+
+**Ожидаемое поведение:** руководитель видит каждое звено «событие → возможный канал → возможное последствие» с пометкой подтверждено/гипотеза и ссылкой на конкретный источник.
+
+**Рекомендация:** добавить отдельный компактный блок цепочки влияния и рендерить только проверенные evidence; недоказанные переходы обозначать явно как гипотезы или `unclear`. Не показывать исходные банковские значения в техническом журнале по умолчанию.
+
+### P2 — Общая инструкция вводит в заблуждение в Fixture и Local Data
+
+**Что произошло:** под заголовком входов остаётся неизменённая фраза «Внешний AI-анализ выбранного профиля и обработанного события…» даже в Fixture/Local Data. В Fixture одновременно видны локальные селекторы компании/события и три JSON-поля, хотя текущая фикстура берёт синтетические данные из сценария.
+
+**Как воспроизвести:** открыть модуль, выбрать Fixture или Local Data и прочитать подпись под «Входные данные»; сравнить с кнопкой Local Data «Загрузить профиль и событие» и сообщением «AI-анализ не запускался».
+
+**Ожидаемое поведение:** назначение и доступные поля соответствуют выбранному режиму, а Fixture ясно показывает, что анализируется синтетический сценарий.
+
+**Рекомендация:** сделать описания и поля режимно-зависимыми. В Fixture по умолчанию скрыть неиспользуемые селекторы локальных данных и показывать сырой JSON только в отдельном «Расширенные входы».
+
+### P2 — Кратковременная ошибка backend отключает работу до перезагрузки
+
+**Что произошло:** при наблюдавшемся `502` health-check установил недоступность backend; кнопки оставались отключены после восстановления прямого API. После перезагрузки состояние вернулось в «доступен».
+
+**Как воспроизвести:** за время этого прогона proxy временно вернул `502` на health/options/scenarios; повторный health API позднее прошёл, но UI не переопросил статус автоматически.
+
+**Ожидаемое поведение:** временный сбой обозначается понятной ошибкой и доступна явная повторная проверка подключения.
+
+**Рекомендация:** добавить кнопку «Повторить проверку» или ограниченный retry health/options. Это наблюдение было временным; причина на стороне приложения не установлена.
+
+## Подтверждения и ограничения
+
+- Живой пользовательский прогон сделан в Chromium/Playwright CLI, с реальными кликами и ответами API, а не только статическим просмотром.
+- Все три fixture-сценария прогнаны кнопкой набора; целевой и два пограничных сценария также запускались отдельно.
+- Local Data запущен на выбранном профиле и обработанном событии read-only; UI показал ноль внешних вызовов. Числовые и прочие исходные банковские значения не включены в этот отчёт или скриншот.
+- External AI, история исследования, записи, RAG/цитатная проверка и внешние источники в этом проходе не запускались/не изменялись.
+- Unit/integration/Playwright test-команды проекта в этом повторном аудите отдельно не запускались. Статус `PASS` относится к реально выполненным fixture-прогонам в UI, а не ко всему тестовому набору проекта.
+- Автоматический retry, отдельная причина transient `502`, поведение проверки стоимости на реальном ответе и качество AI-вывода остаются непроверенными.

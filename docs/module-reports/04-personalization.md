@@ -1,59 +1,88 @@
-# 04 — Personalization Engine
+# 04 — Personalization Engine: повторный аудит
 
-## Verdict
+**Дата:** 22 октября 2026 г.
+**Проверка:** Chromium через Playwright CLI, адрес `/studio/personalization`.
+**Границы:** fixture-сценарии и безопасный отказ Local Data; без внешнего AI и без успешного Local Data запуска.
 
-**Fixture: PASS. Local Data: BLOCKED for the successful ranking path under the read-only constraint. External AI: NOT RUN.** The fixture interface runs the real deterministic ranking core and makes the result factors visible. The main evidence gap is that there is no independent relevance gold set, so the quality of ranking cannot be measured with Precision@K, Recall@K, or NDCG@K. A real local run can also invoke a graph-cache builder that may write a workspace SQLite file.
+## Вердикт
 
-## Owner and data flow
+**Fixture: PASS как проверка исполнения детерминированного алгоритма и формы ответа. Качество ранжирования: NOT EVALUATED. Local Data: BLOCKED для успешного сценария из-за возможной перезаписи локальной SQLite-графа. External AI: NOT RUN.**
 
-- Backend adapter: `modules/04-personalization/backend/adapter.py:15-27` (`run`, synthetic inputs and temporary cache); `:29-63` (`run_local`); `:65-95` (`run_external`).
-- Ranking owner: `modules/04-personalization/backend/personalization.py:476-570` for profile signals; `:572-608` for event importance, evidence quality and recency; `:610-690` for conditional consequence chains and tier; `:691-760` for scoring and result fields; `:772-806` for caching and ordering.
-- API owner: `shared/backend/modules_api.py:61-75`, `:107-141`, and `:162-290` (availability, validation status, routes and dispatch).
-- UI owner: `modules/04-personalization/frontend/ModulePage.tsx:4-19` (result rendering), `:21-57` (inputs, modes, disclosure).
-- Fixtures and module tests: `modules/04-personalization/fixtures/scenarios.json`; `modules/04-personalization/tests/test_module.py:9-41`.
+Fixture не подменяет ранжировщик: адаптер вызывает канонический `rank_personalized_events`. Однако профиль и две новости в этом режиме синтетические. Набор PASS проверяет наличие и количество результатов, но не правильность персонального ранжирования. Независимых gold labels для метрик Precision@K, Recall@K или NDCG@K в модуле не найдено.
 
-`run` creates fixture profiles/events and calls the canonical `personalization.rank_personalized_events`. The score combines connection, event importance, company exposure, evidence quality and recency using weights `0.35 / 0.25 / 0.20 / 0.15 / 0.05` (`personalization.py:27-33, 691-760`). Confirmed identifier, industry, region, bank-product, trade and graph signals are separately described (`:476-570`). The score is explicitly typed as a review priority, not an impact probability. Ranking sorts by tier, descending score, publication time and event ID (`:772-806`). A cache key includes ranking version and the selected profile/event/network (`:762-770`).
+## Владение логикой и фактический поток данных
 
-`run_local` reads company profiles and processed events, optionally loads the business graph, then runs the same ranking core. It passes a temporary directory for ranking results, but calls `business_graph.ensure_database()` when all three source CSVs are present (`adapter.py:43-52`). That builder can rebuild/replace `data/business_network.sqlite` when its fingerprint is stale (`modules/03-business-intelligence/backend/business_graph.py:373-410`). The adapter’s provenance also says the graph cache remains in the workspace (`adapter.py:63`). This makes a first or stale local run potentially mutating; I therefore did not run successful Local Data ranking.
+- **Владелец алгоритма:** `modules/04-personalization/backend/personalization.py`. Совместимый `drive_data_analysis_2026-10-20/personalization.py` загружает этот файл; второй реализации ранжирования нет.
+- **Адаптер:** `modules/04-personalization/backend/adapter.py`. `run()` создаёт synthetic-профиль/события и вызывает владельца алгоритма с временным SQLite-кэшем. Фикстурный provenance сообщает `externalCalls: 0`.
+- **API:** `shared/backend/modules_api.py`. UI отправляет `POST /api/modules/personalization/run` с `mode`, `scenarioId` и `input`; маршрут загружает адаптер, объединяет данные сценария с формой и оборачивает ответ контрактом `1.0`. `GET /health`, `GET /scenarios` и `POST /tests` доступны независимо от AI.
+- **UI:** `modules/04-personalization/frontend/ModulePage.tsx` рендерит персональные ленты и сравнение. Общая форма/статусы принадлежат `shared/frontend/ModuleWorkbench.tsx`.
+- **Фикстуры:** `modules/04-personalization/fixtures/scenarios.json`; модульные тесты находятся в `modules/04-personalization/tests/test_module.py`.
 
-`run_external` first computes local rankings, then makes one Polza request for narrative explanations. It sends selected profile fields and the top five event titles/scores/factors. The adapter states that AI does not change scores or order (`adapter.py:65-95`). This manual provider call was not run.
+Ядро формирует сигналы точного упоминания ID, ID из графа связей, отрасли, региона, банковского продукта и внешней торговли. Оно отдельно считает максимальную силу связи, важность события, экспозицию компании, качество подтверждения и давность. Итоговый балл складывается с весами `0.35 / 0.25 / 0.20 / 0.15 / 0.05` соответственно. Статус определяется качеством и силой связи; отдельный `ranking_tier` продвигает точное совпадение, специфический отраслевой/продуктовый сигнал и слабый матч. Результаты сортируются по возрастанию tier, затем по убыванию балла, дате и ID события.
 
-## API contract
+Код прямо маркирует результат как `priority_to_review_not_impact_probability`; направление влияния выставляется `unclear`. Цепочки последствий условны и сохраняют неизвестные данные. Графовая связь трактуется как платежное/групповое упоминание, но сама по себе не доказывает роль контрагента или контроль. Флаг банковского продукта не подтверждает действующий договор, остаток или применимость условий. Отраслевое совпадение не утверждает фактическую деятельность компании.
 
-- `GET /api/modules/personalization/health` reports backend/local/external availability.
-- `GET /api/modules/personalization/scenarios` lists the three fixture scenarios.
-- `POST /api/modules/personalization/run` accepts `{mode, scenarioId?, input}`. Fixture inputs include `company_ids` (one or two IDs), optional `events`, `limit`, and fixture-only sparse-profile control. Local mode uses `company_ids`/`company_id` and `limit`. External mode additionally accepts `max_cost_rub`.
-- Successful runs return `contractVersion: "1.0"`, `data`, `provenance`, and `validation: {status, checks}`. A custom run without a gold expectation should be `NOT_EVALUATED`, not `PASS` (`modules_api.py:123-141, 280-290`). Invalid local company IDs return a user-facing `400 / INVALID_INPUT`.
+### Local Data и риск записи
 
-## Browser pass
+`run_local()` загружает профиль через `stage1_analyzer.load_companies()`, затем проверяет, что каждый ID найден однозначно. Далее он загружает обработанные события, проверяет три исходных CSV и при наличии всех трёх вызывает `business_graph.ensure_database()`, после чего читает граф и запускает тот же ранжировщик. Ранжировщик получает временный cache path, но графовый индекс — нет. `ensure_database()` пересчитывает fingerprint, а при устаревшем индексе строит временную БД и заменяет `data/business_network.sqlite` через `os.replace`.
 
-Used Chromium through Playwright CLI at `http://127.0.0.1:5173/studio/personalization`; all actions below were in the isolated `module-qa-04-06` browser session except the initial fixture run, which preceded the parent’s request to isolate sessions. External AI was never selected for execution.
+В рабочем клоне уже есть `data/business_network.sqlite` размером **310,079,488 байт**. Поэтому валидный Local Data запуск мог бы заменить существующий индекс; из-за ограничения на сохранение локальных данных он не выполнялся. Проверенный несуществующий ID отклонён до загрузки событий и вызова `ensure_database()`. В исходную CSV, архив новостей, историю и графовая SQLite этим тестом запись не производилась. Проверка отсутствия записи основана на порядке вызовов в коде и на отказе до ветки графа; валидный сценарий специально не запускался.
 
-1. The route opened with company field prefilled with `U_9250`; the mode selector initially showed External AI selected and visibly disclosed that profile fields/top five event names/scores/factors would be sent on manual launch.
-2. Switched to Fixture, clicked **«Запустить 3 теста»**: all three scenarios reported PASS.
-3. Clicked **«Запустить алгоритм»**: PASS; two events displayed with scores, relevance, common importance, status, score kind, ranking tier and reasons. The event-specific fixture scored `62.8` (`weak_match`, relevance `48`, importance `68`); the unrelated event scored `16.4` (`no_confirmed_match`). UI explicitly labels the score as “Приоритет к просмотру” and says it is not an impact probability.
-4. Selected the prepared **«Сравнение компаний»** scenario and ran it. Both companies and both events were rendered. For the construction-credit fixture the two profiles received the same `62.8`/`48` values, while their explanatory industry text differed; the other event was also equal. This is not by itself proof of a wrong result, but the prepared comparison asserts only that two companies and two events are returned. A separate mocked local unit test checks that reason values contain each profile’s OКВЭД code, not that ranking quality or an expected ordering is correct.
-5. Switched to Local Data and tried a nonexistent company ID. The UI returned a clear error (“Компания … не найдена или профиль неоднозначен.”) before the adapter reaches `ensure_database`; no persistent data was changed. Successful Local Data ranking was skipped because cache freshness/read-only behavior could not be established safely.
+### External AI
 
-The original browser pass found that changing the mode retained the previous result. Fixed after that pass in `shared/frontend/ModuleWorkbench.tsx`: switching modes now clears the result, scenario test output and error, and the mode selector is disabled while a request is running. The Studio E2E was rerun after the change; it passed all nine module routes. The specific stale-result transition was not separately asserted by the shared E2E script.
+При загрузке страницы интерфейс выбрал `External AI` как предпочитаемый режим и показал явное раскрытие: только ручной запуск передаст профильные признаки и пять верхних событий/факторов в Polza. Кнопка не нажималась. В `run_external()` сначала считается локальное ранжирование, затем выполняется один `chat_json` запрос для текстовых пояснений; адаптер явно запрещает AI менять баллы или порядок. Реальное поведение/стоимость провайдера в этом прогоне не проверялись.
 
-## Test commands and results
+## Живые действия и результаты
 
-`npm run test:module -- personalization` — **PASS**: 3 Python tests and 3 prepared fixture scenarios. Unit coverage includes fixture execution, scenario suite, and a mocked local comparison checking distinct industry reasons. The mocked local case forces graph source paths unavailable; it does not verify the production CSV/archive path or cache side effects.
+Все приведённые ниже результаты получены через UI в Chromium; данные ленты — синтетические сценарии модуля.
 
-Search for gold/ground-truth labels and ranking metrics in this module, its fixtures and analytics docs found none. Fixture expectations assert result counts only. Therefore live quality metrics cannot be reproduced from this repository state.
+1. Открыл `/studio/personalization`. Backend был доступен; External AI показывался как ручное действие. Переключил режим на Fixture.
+2. Нажал **«Запустить 3 теста»**. UI показал `PASS` для «Ранжирование событий», «Сравнение компаний» и «Неполный профиль». Это реальные POST-запуски адаптера, но ожидания сценариев — только наличие компаний/событий и их количество.
+3. Запустил «Ранжирование событий». Получил две карточки: кредитная тема — `62.8`, `weak_match`, релевантность `48`, важность события `68`, направление `unclear`; погода — `16.4`, `no_confirmed_match`, релевантность `0`, важность `25`. Видимы тип балла, tier и текстовые сигналы; интерфейс отдельно поясняет, что балл не является вероятностью ущерба.
+4. Выбрал «Сравнение компаний». Первоначально, до общего исправления формы, прежний однокомпанейный результат оставался на экране при уже изменившихся входах. После исправления `ModuleWorkbench` повторил переход `success → compare`: старый результат, проверки и ошибка очистились, а ID сменились на два сценарных synthetic-профиля. Запустил сравнение: обе компании и две одинаковые фикстурные новости отображены.
+5. На новости о строительном кредитовании профили `U_BUILD` и `U_FINANCE` получили одинаковые `62.8` и релевантность `48`, но разные отраслевые объяснения и tier (1 против 2). Для `U_BUILD` показан также слабый банковский продуктовый сигнал с оговоркой, что флаг не подтверждает договор. Погода у обеих компаний получила одинаковые `16.4` и `no_confirmed_match`. Это осмысленный пример разницы объяснений, но не доказательство качества персонализации: profiles/events synthetic, а для чисел нет независимого эталона.
+6. Выбрал **«Свои данные»**, ввёл synthetic ID `U_CUSTOM_TEST` и запустил fixture. Алгоритм выполнился на тех же двух встроенных событиях; UI/контракт показали `NOT_EVALUATED` и пояснили отсутствие эталонной проверки. Это корректное состояние, не PASS.
+7. В Local Data ввёл несуществующий `TEST_NONEXISTENT_04`. UI показал понятную ошибку «Компания … не найдена или профиль неоднозначен»; запрос остановился до графового индекса. Успешное Local Data ранжирование не запускал по указанному выше риску.
+8. Не вызывал External AI. В fixture provenance браузерного результата указывал `externalCalls: 0`.
+9. Дополнительно проверил окно 390×844 CSS px: `documentElement.scrollWidth` был 375 px при `clientWidth` 375 px; горизонтального переполнения не обнаружено. Это замер ширины DOM, не полноценный визуальный аудит мобильного вида.
 
-## Status and findings
+Один раз во время проверки Chromium получил 502 для Vite proxy запросов `health/scenarios` и UI показывал Backend недоступен. Прямой health API на `:8097` и повторный запрос через Vite позже вернули 200; после перезагрузки UI восстановился. Совпало с обновлениями общего компонента через HMR; устойчивый отказ не воспроизвёлся.
 
-| Mode | Status | Evidence |
+## Объяснимость и ограничения интерфейса
+
+Карточки показывают итоговый балл, relevance, общую важность, направление, тип балла, tier и текстовые причины. Это помогает увидеть, почему правило сработало, и отличить `weak_match` от отсутствия найденного совпадения. При этом числовые `components`, `weights` и `contributions`, а также дата, издатель, URL, статус полноты текста, подтверждённые факты, цепочки последствий и missing data находятся только в свёрнутом блоке **«Полный результат и технические детали»** в виде полного JSON. Ссылка на публикацию из карточки не открывается, пока пользователь не разбирает JSON.
+
+Форма **«Свои данные»** не содержит поля профиля или набора событий. Адаптер принимает `events` в API, но форма посылает только ID компаний/лимит; если события не переданы, используются два встроенных fixture. Произвольный ID в fixture — метка синтетического профиля, а не поиск локальной компании. В текущей реализации специальный ID `U_FINANCE` выбирает ещё один встроенный профиль. Поэтому этот запуск нельзя трактовать как свободную подачу своего тестового набора.
+
+`PASS` prepared suite не оценивает релевантность: `scenarios.json` ожидает лишь количество компаний/событий. В модуле не найдено независимой разметки для ранжирования; метрики качества из текущих тестов вычислить нельзя.
+
+## Проблемы и рекомендации
+
+| Серьёзность | Наблюдение и воспроизведение | Ожидаемое поведение / рекомендация | Статус |
+|---|---|---|---|
+| **P2** | При `success` → выбор `compare` до общего исправления результат PASS для одной компании оставался под новой формой сравнения. | Сбрасывать результат, проверки и ошибку при смене сценария/режима. `ModuleWorkbench` теперь делает это; повторный браузерный переход подтверждён. | Исправлено в текущей рабочей ветке, проверено повторно. |
+| **P2** | В «Своих данных» можно изменить ID, но нельзя задать реальный профиль или новый набор событий; произвольный ID использует synthetic профиль и встроенные события. | Либо переименовать режим в «Параметры фикстуры», либо дать безопасные входные поля для обезличенного профиля и JSON-событий с проверкой схемы. | Открыто. |
+| **P2** | Карточка не показывает численное разложение балла и не даёт открыть источник обычной ссылкой; данные есть только в полном JSON. | Показать компактные вклад/вес факторов и видимые дату, источник, полноту текста и ссылку; детали/цепочки оставить раскрываемыми. | Открыто. |
+| **P2** | Сценарии помечаются PASS по форме/количеству; нет независимой gold-разметки, поэтому одинаковые оценки двух профилей не позволяют судить о точности. | Подготовить версионируемую независимую оценочную выборку и метрики Precision@K/Recall@K/NDCG@K; не оценивать алгоритм его же правилами. | Открыто. |
+| **P2** | Валидный Local Data запрос может вызвать `ensure_database()` и заменить существующую графовую SQLite при устаревшем fingerprint. Условие — наличие всех трёх source CSV; успешный запрос не запускался. | Для эксперимента ранжирования читать уже существующий граф в read-only режиме и отказывать при отсутствии/устаревании; rebuild вынести в отдельное явное действие с уведомлением. | Не проверялось на успешном пути из-за риска записи. |
+| **P3** | Один раз UI временно показывал недоступность из-за 502 health/scenario proxy во время HMR; после reload запросы вернулись к 200. | При transient health ошибке дать повторную проверку/обновление статуса; проверить отдельно от HMR, если повторится. | Непостоянно; причина не доказана. |
+| **P3, статический риск** | Tie-break после tier и score сортирует `published_at` по возрастанию; при полном равенстве это ставит более старое событие первым. В фикстуре такой tie не возник. | Явно выбрать правило для равных оценок; если свежесть важнее, сортировать дату по убыванию и покрыть тестом. | Не подтверждён live-кейсом. |
+
+## Статусы и доказательства
+
+| Путь | Статус | Основание |
 |---|---|---|
-| Fixture | **PASS** | Browser ranking and compare scenario; 3/3 prepared scenarios and module tests pass. |
-| Local Data | **BLOCKED** | Backend reports it available, but successful run may call `ensure_database()` and replace a stale graph-cache SQLite. Safe invalid-ID path only was exercised. |
-| External AI | **NOT RUN** | Не запускался после выяснившегося неизвестного полного списания на другом ручном AI-запросе. Статически это ручной вызов только для пояснения; порядок ранжирования он менять не должен. |
+| Fixture `success` | **PASS** | Реальный вызов алгоритма; API/UI вернули 1 synthetic-профиль и 2 события, checks `companies` и `rankedEvents` прошли. |
+| Fixture compare | **PASS, качество NOT EVALUATED** | Реальный общий набор из 2 событий для двух synthetic-профилей; `companies` и `eventCount` прошли. Оценка алгоритма независимыми labels отсутствует. |
+| Fixture custom | **NOT_EVALUATED** | Собственный synthetic ID запустился на встроенных событиях; UI явно обозначил отсутствие эталонных проверок. |
+| Fixture suite | **PASS** | Через браузер нажато «Запустить 3 теста», все три сценария показали PASS. Автоматический тестовый CLI отдельно в этом повторном аудите не запускался. |
+| Local Data invalid ID | **PASS для отказа** | Пользовательское сообщение об ошибке до `ensure_database()`. |
+| Local Data happy path | **BLOCKED** | Не запускался, чтобы не допустить условную замену существующей `data/business_network.sqlite`. |
+| External AI | **NOT RUN** | Провайдер не вызывался, стоимость — 0 ₽ в рамках этого аудита. |
+| Мобильная ширина 390 px | **PASS по переполнению** | `scrollWidth == clientWidth == 375`; полный визуальный осмотр мобильной версии не проводился. |
 
-### Defects and recommendations
+## Скриншот
 
-1. **P2 — Local Data can have a hidden cache-write side effect.** Reproduce by running Local Data with valid company IDs while all source CSVs exist and the graph database is absent/stale. Expected: a read-only ranking request should not build/replace persistent graph data. Make graph preparation a separate explicit action or require a current existing cache and open it read-only; disclose any write before enabling it.
-2. **P2 — Ranking quality is not independently measurable.** Reproduce by running any custom fixture/local request: the API has no labelled expected relevance checks and correctly returns `NOT_EVALUATED`. Add a separately authored, versioned relevance set and evaluation command before publishing ranking-quality claims; do not grade against the same rules that generate the rank.
-3. **P2 — Company-comparison test proves the response shape, not ranking quality.** The live fixture comparison gave identical score values for both profiles on its primary event. The prepared scenario checks counts only; the mocked local test checks profile-specific reason text. Add independently justified expected ordering/factor assertions or explicitly label the comparison as a signal explanation experiment.
-4. **P2 — Mode changes retain results from the previous mode.** Reproduce by running Fixture, switching to Local Data without a new run, and observing the old result under the new mode’s copy. Clear result/test state on mode change or display the result’s original mode prominently.
+Снимок Chromium 1440×1000 показывает сравнение только на подготовленных synthetic-профилях/событиях; банковские записи не включены.
+
+![Fixture-сравнение Personalization в Chromium](assets/04-personalization-retest.png)

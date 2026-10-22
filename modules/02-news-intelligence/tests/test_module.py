@@ -49,6 +49,18 @@ class IsolatedFixtureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "не короче 20 символов"):
             _load("news-intelligence").run({"text": "Слишком коротко"})
 
+    def test_invalid_taxonomy_fixture_does_not_leak_node_paths_or_source(self):
+        with self.assertRaises(ValueError) as caught:
+            _load("news-intelligence").run({
+                "text": "Новость содержит достаточно длинный текст для валидации.",
+                "choices": [{"id": "NO_SUCH_EVENT", "confidence": 0.9}],
+            })
+        message = str(caught.exception)
+        self.assertIn("допустимую метку таксономии", message)
+        self.assertNotIn("file:///", message)
+        self.assertNotIn("classifier.mjs", message)
+        self.assertNotIn("throw new Error", message)
+
     def test_external_runner_failure_keeps_provider_reason_and_usage_without_leaking_key(self):
         adapter = _load("news-intelligence")
         payload = {

@@ -63,10 +63,10 @@ export function ModuleWorkbench({ spec }: Props) {
       ? 'Реальный ручной запрос к Polza AI и подключённым данным. Модель, вызовы и ограничения показаны в результате.'
       : result?.mode === 'local_data'
         ? 'Алгоритм выполнен на подключённых локальных данных без отправки профиля во внешний сервис.'
+        : error
+          ? 'Запуск завершился ошибкой; сообщение и учёт вызовов показаны рядом с формой.'
         : mode === 'external_ai'
-          ? error
-            ? 'Внешний AI-запрос завершился ошибкой. Подробности и учёт вызовов показаны в сообщении об ошибке.'
-            : 'Результат ручного запроса к Polza AI появится здесь после завершения анализа.'
+          ? 'Результат ручного запроса к Polza AI появится здесь после завершения анализа.'
           : mode === 'local_data'
             ? 'Результат обработки подключённых локальных данных без внешнего AI.'
             : mode === 'live_feed'
@@ -152,7 +152,7 @@ export function ModuleWorkbench({ spec }: Props) {
     setBusy('run'); setError(''); setTestRun(null); setResult(null)
     const controller = new AbortController()
     let timeoutTriggered = false
-    const timeoutMs = mode === 'external_ai' ? 110000 : 30000
+    const timeoutMs = mode === 'external_ai' ? 190000 : 30000
     const timeoutId = window.setTimeout(() => { timeoutTriggered = true; controller.abort() }, timeoutMs)
     try {
       const response = await fetch(`/api/modules/${spec.id}/run`, {
@@ -179,7 +179,7 @@ export function ModuleWorkbench({ spec }: Props) {
     } catch (caught) {
       if (timeoutTriggered) {
         setError(mode === 'external_ai'
-          ? 'Агент не вернул ответ за 110 секунд. Сервер может ещё завершать этот запуск; не отправляйте его повторно, пока он не освободится.'
+          ? 'Агент не вернул ответ за 190 секунд. Сервер может ещё завершать этот запуск; не отправляйте его повторно, пока он не освободится.'
           : 'Модуль не вернул ответ за 30 секунд. Проверьте доступность backend и повторите запуск.')
       } else setError(caught instanceof Error ? caught.message : 'Не удалось выполнить сценарий.')
     } finally { window.clearTimeout(timeoutId); setBusy('') }
@@ -201,12 +201,12 @@ export function ModuleWorkbench({ spec }: Props) {
       <div><a className="module-back" href="/studio">← Alfa Insight Studio</a><p className="module-eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</p><h1>{spec.title}</h1><p>{spec.summary}</p></div>
       {spec.productLink && <a className="module-product-link" href="/">Открыть продукт для клиента ↗</a>}
     </header>
-    <div className="module-status-row"><span className={`module-status module-status--${backend}`}>Backend: {backend === 'checking' ? 'проверяю…' : backend === 'ready' ? 'доступен' : 'недоступен'}</span><span className="module-status">{spec.id === 'news-collector' ? 'AI-обработка (T08/T09):' : spec.id === 'alfa-product' ? 'AI пользовательского продукта:' : 'Внешний AI:'} {externalAIAvailable ? (spec.id === 'news-collector' ? 'подключён в News Intelligence' : 'доступен только по отдельному действию') : 'не настроен'}</span><label className="module-mode">Режим данных <select value={mode} disabled={Boolean(busy)} onChange={event => { setMode(event.target.value as typeof mode); setResult(null); setTestRun(null); setError('') }}><option value="fixture">Fixture</option>{spec.liveFeed && <option value="live_feed">Live RSS — ручной сбор</option>}{spec.localData && <option value="local_data" disabled={!localDataAvailable}>Local Data{localDataAvailable ? '' : ' — не подключены'}</option>}{spec.externalAi && <option value="external_ai" disabled={!externalAIAvailable}>External AI{externalAIAvailable ? ' — по выбору' : ' — нужен opt-in'}</option>}</select></label></div>
+    <div className="module-status-row"><span className={`module-status module-status--${backend}`}>Backend: {backend === 'checking' ? 'проверяю…' : backend === 'ready' ? 'доступен' : 'недоступен'}</span><span className="module-status">{spec.id === 'news-collector' ? 'AI-обработка (T08/T09):' : spec.id === 'alfa-product' ? 'AI пользовательского продукта:' : 'Внешний AI:'} {externalAIAvailable ? (spec.id === 'news-collector' ? 'подключён в News Intelligence' : 'доступен только по отдельному действию') : 'не настроен'}</span><label className="module-mode">Режим данных <select value={mode} disabled={Boolean(busy)} onChange={event => { setMode(event.target.value as typeof mode); setFields({}); setResult(null); setTestRun(null); setError('') }}><option value="fixture">Fixture</option>{spec.liveFeed && <option value="live_feed">Live RSS — ручной сбор</option>}{spec.localData && <option value="local_data" disabled={!localDataAvailable}>Local Data{localDataAvailable ? '' : ' — не подключены'}</option>}{spec.externalAi && <option value="external_ai" disabled={!externalAIAvailable}>External AI{externalAIAvailable ? ' — по выбору' : ' — нужен opt-in'}</option>}</select></label></div>
     {spec.sourceCatalog && sourceCatalog?.sources && <section className="module-source-catalog" aria-label="Подключённые источники"><div><h2>Подключённые RSS-источники</h2><p>{sourceCatalog.storedPublications ?? 0} публикаций в рабочей базе · при открытии источники не опрашиваются</p></div><ul>{sourceCatalog.sources.map((source: any) => { const lastRun = (sourceCatalog.recentRuns || []).find((run: any) => run.feed_key === source.key); return <li key={source.key}><strong>{source.source} · {source.feedName}</strong><a href={source.url} target="_blank" rel="noreferrer">RSS ↗</a><small>{source.descriptionContainsFullText ? 'Описание ленты хранится как полный текст' : 'Описание ленты сохраняется как выдержка'}{lastRun ? ` · последний сбор: ${lastRun.status}` : ' · ещё не собиралась'}</small></li> })}</ul></section>}
     <div className="module-layout">
       <form className="module-panel module-inputs" onSubmit={run}>
         <div className="module-panel-title"><div><h2>Входные данные</h2><p>{spec.purpose}</p></div></div>
-        {mode === 'fixture' && <label className="module-control"><span>Подготовленный сценарий</span><select value={selected} onChange={event => setSelected(event.target.value)}><option value="">Свои данные</option>{scenarios.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>{selectedScenario?.description && <small>{selectedScenario.description}</small>}</label>}
+        {mode === 'fixture' && <label className="module-control"><span>Подготовленный сценарий</span><select value={selected} disabled={Boolean(busy)} onChange={event => { setSelected(event.target.value); setFields({}); setResult(null); setTestRun(null); setError('') }}><option value="">Свои данные</option>{scenarios.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>{selectedScenario?.description && <small>{selectedScenario.description}</small>}</label>}
         {spec.fields.filter(field => (!field.externalOnly || mode === 'external_ai') && (!field.liveOnly || mode === 'live_feed') && (!field.fixtureOnly || mode === 'fixture') && (mode !== 'local_data' || isLocalField(field))).map(field => {
           const scenarioValue = mode === 'fixture' ? selectedScenario?.input?.[field.name] : undefined
           const scenarioDisplay = scenarioValue === undefined ? undefined : field.kind === 'json' ? JSON.stringify(scenarioValue, null, 2) : String(scenarioValue)
@@ -218,12 +218,12 @@ export function ModuleWorkbench({ spec }: Props) {
         })}
         {mode === 'live_feed' && <p className="module-result-inline-note">По нажатию будет выполнен один GET-запрос к выбранной публичной RSS-ленте. Клиентские данные не отправляются; публикации и журнал сохраняются в локальной базе этого рабочего клона.</p>}
         <div className="module-actions"><button className="module-primary" disabled={Boolean(busy) || backend !== 'ready'}>{busy === 'run' ? 'Выполняю…' : mode === 'live_feed' ? 'Собрать выбранную RSS-ленту' : mode === 'external_ai' ? 'Запустить Polza AI-анализ' : mode === 'local_data' ? (spec.localRunLabel || 'Запустить алгоритм') : 'Запустить алгоритм'}</button><button className="module-secondary" type="button" disabled={Boolean(busy) || backend !== 'ready'} onClick={testAll}>{busy === 'tests' ? 'Проверяю…' : `Запустить ${scenarios.length} теста`}</button></div>
-        {mode === 'external_ai' && <p className="module-result-inline-note">По нажатию данные будут вручную отправлены в Polza AI: {spec.externalAiScope || 'только поля, показанные в форме и явно указанные для анализа'}. Проверьте условия стоимости в полях формы. Автоматические запросы не выполняются.</p>}
+        {mode === 'external_ai' && <p className="module-result-inline-note">По нажатию данные будут вручную отправлены в Polza AI: {spec.externalAiScope || 'только поля, показанные в форме и явно указанные для анализа'}. Порог стоимости сверяется после ответа провайдера и не гарантирует верхний предел: один уже отправленный запрос может стоить больше указанного значения. Автоматические запросы не выполняются.</p>}
         {error && <div className="module-error" role="alert">{error}</div>}
       </form>
       <section className="module-panel module-results" aria-live="polite">
         <div className="module-panel-title"><div><h2>Результат</h2><p>{resultDescription}</p></div>{result && <span className={`module-badge module-badge--${statusTone(result.validation?.status)}`}>{result.validation?.status || result.status}</span>}</div>
-        {!result && !testRun && !busy && <div className="module-empty"><strong>{mode === 'external_ai' ? 'Реальный AI-анализ готов к ручному запуску' : mode === 'local_data' ? 'Локальные данные готовы к запуску' : mode === 'live_feed' ? 'Живая RSS-лента готова к сбору' : 'Фикстурный сценарий готов к запуску'}</strong><span>{mode === 'external_ai' ? 'Нажмите кнопку только после выбора реальных входных данных и проверки раскрытия передачи модели.' : mode === 'local_data' ? 'Данные читаются локально; внешний AI не вызывается.' : mode === 'live_feed' ? 'Запрос к публичному RSS выполняется только после нажатия кнопки.' : 'Этот режим использует подготовленные данные для бесплатной проверки потока.'}</span></div>}
+        {!result && !testRun && !busy && !error && <div className="module-empty"><strong>{mode === 'external_ai' ? 'Реальный AI-анализ готов к ручному запуску' : mode === 'local_data' ? 'Локальные данные готовы к запуску' : mode === 'live_feed' ? 'Живая RSS-лента готова к сбору' : 'Фикстурный сценарий готов к запуску'}</strong><span>{mode === 'external_ai' ? 'Нажмите кнопку только после выбора реальных входных данных и проверки раскрытия передачи модели.' : mode === 'local_data' ? 'Данные читаются локально; внешний AI не вызывается.' : mode === 'live_feed' ? 'Запрос к публичному RSS выполняется только после нажатия кнопки.' : 'Этот режим использует подготовленные данные для бесплатной проверки потока.'}</span></div>}
         {busy && <div className="module-loading"><span className="module-spinner" />{busy === 'tests' ? `Выполняю набор из ${scenarios.length} сценариев…` : 'Передаю данные адаптеру и запускаю алгоритм…'}</div>}
         {result && <>
           {result.validation?.status === 'NOT_EVALUATED' && <p className="module-result-inline-note">Запуск выполнен, но для этих входных данных нет эталонных проверок. Результат не оценён.</p>}

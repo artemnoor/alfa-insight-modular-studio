@@ -101,7 +101,7 @@ export const moduleSpec: ModuleSpec = {
       { value: 'full', label: 'Полный текст' }, { value: 'excerpt', label: 'RSS-выдержка' }, { value: 'missing', label: 'Текст источника отсутствует' },
     ] },
     { name: 't09_candidates', label: 'Кандидаты событий T09 (JSON)', kind: 'json', rows: 7, placeholder: '[]' },
-    { name: 'max_cost_rub', label: 'Лимит стоимости (₽, максимум 5)', kind: 'number', initial: '1', min: 0.05, max: 5, externalOnly: true },
+    { name: 'max_cost_rub', label: 'Порог расходов (₽, максимум 5)', kind: 'number', initial: '1', min: 0.05, max: 5, externalOnly: true, helperText: 'Останавливает следующие вызовы после полученного ответа. Уже отправленный запрос может превысить порог.' },
   ],
   highlights: [],
   renderResult,

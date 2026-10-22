@@ -1,11 +1,23 @@
 from __future__ import annotations
 import sys, tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "drive_data_analysis_2026-10-20"))
 import news_collector as collector
 
 WORKSPACE_DB = ROOT / "data" / "news_collector_studio.sqlite3"
+
+
+def _public_feed_error(value):
+    message = str(value or "")
+    if "ParseError" in message or "not well-formed" in message or "syntax error" in message.lower():
+        return "Источник вернул некорректный RSS/XML. Проверьте формат ленты и повторите запуск."
+    if ":" in message:
+        error_type = message.split(":", 1)[0].strip()
+        if error_type in {"Timeout", "TimeoutError", "ConnectionError", "HTTPError", "SSLError"}:
+            return f"Не удалось получить RSS-ленту: {error_type}. Проверьте доступность источника."
+    return "Не удалось обработать RSS-ленту. Проверьте формат и доступность источника."
 
 
 def _source(feed_key):
@@ -33,7 +45,10 @@ def catalog():
 def run(payload):
     feed = _source(payload.get("feed_key"))
     xml = str(payload.get("rss_xml") or "<rss><channel/></rss>")
-    items = collector.parse_rss(xml.encode(), feed, "2026-10-21T00:00:00+00:00")
+    try:
+        items = collector.parse_rss(xml.encode(), feed, "2026-10-21T00:00:00+00:00")
+    except ET.ParseError as exc:
+        raise ValueError("Не удалось прочитать RSS/XML. Проверьте структуру ленты.") from exc
     with tempfile.TemporaryDirectory(prefix="alfa-collector-") as folder:
         db = Path(folder) / "news.sqlite"
         collector.initialize_database(db)
@@ -65,12 +80,12 @@ def run_live(payload, *, fetcher=collector.fetch_feed, db_path=None):
         "updated": latest["updated_count"],
         "duplicates": latest["duplicate_count"],
         "status": latest["status"],
-        "error": latest["error"],
+        "error": _public_feed_error(latest["error"]) if latest["error"] else "",
         "quality": {"missingDate": sum(not row["published_at"] for row in items),
                     "excerptCount": sum(row["content_status"] == "excerpt" for row in items),
                     "fullCount": sum(row["content_status"] == "full" for row in items)},
         "items": items,
-        "runs": history,
+        "runs": [{**row, "error": _public_feed_error(row.get("error")) if row.get("error") else ""} for row in history],
         "provenance": {"kind": "public RSS feed", "sources": [feed.feed_url],
                        "writes": "workspace-local SQLite only", "externalCalls": 1},
     }

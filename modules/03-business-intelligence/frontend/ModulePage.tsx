@@ -31,7 +31,7 @@ export const moduleSpec = {
       "initial": "U_9250",
       "placeholder": "Введите ID компании"
     }
-    ,{ "name": "max_cost_rub", "label": "Лимит стоимости AI (₽, максимум 5)", "kind": "number", "initial": "1", "min": 0.05, "max": 5, "externalOnly": true }
+    ,{ "name": "max_cost_rub", "label": "Порог проверки расходов AI (₽, максимум 5)", "kind": "number", "initial": "1", "min": 0.05, "max": 5, "externalOnly": true, "helperText": "Проверяется после ответа; один уже отправленный запрос может превысить порог." }
   ],
   "highlights": [
     {

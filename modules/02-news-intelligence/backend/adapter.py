@@ -60,7 +60,9 @@ def run(payload):
     runner = ROOT / "modules" / "02-news-intelligence" / "backend" / "run.mjs"
     result = subprocess.run(["node", str(runner)], input=json.dumps(value, ensure_ascii=False), capture_output=True, text=True, encoding="utf-8", cwd=ROOT, timeout=30)
     if result.returncode:
-        raise ValueError(result.stderr.strip()[:250] or "T08/T09 fixture runner failed")
+        if "не выбрала ни одного допустимого ID таксономии" in (result.stderr or ""):
+            raise ValueError("T08 не нашёл допустимую метку таксономии. Проверьте классификационный вариант.")
+        raise RuntimeError("Не удалось выполнить fixture-проход T08/T09.")
     data = json.loads(result.stdout)
     data["provenance"] = {
         "kind": "fixture model transport",

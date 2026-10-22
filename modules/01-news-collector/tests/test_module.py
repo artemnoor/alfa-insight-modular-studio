@@ -11,6 +11,12 @@ class IsolatedFixtureTests(unittest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertTrue(result)
 
+    def test_malformed_fixture_xml_returns_a_safe_validation_message(self):
+        with self.assertRaisesRegex(ValueError, "Не удалось прочитать RSS/XML") as caught:
+            _load("news-collector").run({"rss_xml": "<rss><channel>"})
+        self.assertNotIn("ParseError", str(caught.exception))
+        self.assertNotIn("line 1", str(caught.exception))
+
     def test_prepared_scenarios(self):
         status, result = dispatch("POST", "/api/modules/news-collector/tests", {})
         self.assertEqual(status, 200)
@@ -52,7 +58,8 @@ class IsolatedFixtureTests(unittest.TestCase):
                 db_path=Path(folder) / "collector.sqlite3",
             )
         self.assertEqual(result["status"], "error")
-        self.assertIn("fixture timeout", result["error"])
+        self.assertIn("TimeoutError", result["error"])
+        self.assertNotIn("fixture timeout", result["error"])
 
     def test_live_collection_rejects_unlisted_source(self):
         adapter = _load("news-collector")
