@@ -109,3 +109,63 @@ External запуск требует общего opt-in/key/allowlist и руч
 - На 1440, 1280 и 390 px горизонтального переполнения нет. Артефакты содержат только synthetic fixture и синтетический Local Data: [fixture](assets/08-evidence-verification-round2-fixture.png), [локальная точная сверка синтетического источника](assets/08-evidence-verification-round2-local-synthetic.png).
 
 Команда `npm run test:module -- evidence-verification` проходит: 3 Python unit tests, 3 browser-independent helper tests и 3/3 fixture сценария. Остаточный риск: точное вхождение цитаты не подтверждает смысловую применимость, числа или отсутствие противоречий; ни Local Data, ни deterministic fixture это не оценивают. External semantic review намеренно не выполнялся.
+
+## Раунд 3 — fixture-проверка в свежем Chromium (2026-10-22)
+
+Маршрут заново открыт в headed Chromium (`evidence_r3`) по адресу `http://127.0.0.1:5173/studio/evidence-verification`; health API ответил HTTP 200, состояние Backend — «доступен». Начальный режим был `External AI — по выбору`; до любых запусков переключил его на Fixture. Provider request не отправлялся, внешние клиентские или банковские данные не использовались.
+
+### Реализация и значение статусов
+
+- Единственный владелец точной проверки — `modules/08-evidence-verification/backend/evidence_core.py::_verify_support`. `modules/05-impact-analysis/backend/stage2_analyzer.py` использует ту же функцию; второго алгоритма проверки цитаты не найдено.
+- Проверка связывает claim `source_id` с `sources[].chunk_id`, затем проверяет, что нормализованная цитата длиной не менее 35 буквенно-цифровых символов входит в `source.text`. Нормализация приводит регистр, `ё`, мягкий дефис и последовательности пробелов. Claim body, числа, смысловая поддержка, противоречия и применимость не сравниваются.
+- `adapter.run` строит Fixture из synthetic source/claim и выдаёт точные статусы `supported` / `partial` / `unsupported`; выражение для `unclear` написано в коде, но пустой набор claims до него не доходит: `payload.get("claims") or [demo claim]` подставляет демо. `run_local` и `run_external` вместо этого требуют непустые списки. Для непустого утверждения с отсутствующим source или цитатой точный checker возвращает `unsupported`.
+- В API v1 поле `data.status` — результат точной сверки. `validation.status=PASS` говорит, что выполнено ожидание подготовленного fixture-сценария; `NOT_EVALUATED` означает, что у произвольного ввода нет эталонного ожидания. Это отдельные уровни, и ни один из них не является семантическим заключением.
+- `semanticReview.reviews[].status` (`supported`, `partial`, `unsupported`, `unclear`) появляется только после отдельного ручного запуска External AI. Оно не было получено в этом раунде. External AI-код помечает его `independentReview=false`; модельная оценка не была бы независимой проверкой.
+
+### Действия и результаты Chromium
+
+| Сценарий | Результат живого UI / HTTP |
+|---|---|
+| Подготовленная точная цитата (`supported`) | `POST /api/modules/evidence-verification/run` — HTTP 200, validation `PASS`, `data.status=supported`, одна точная цитата принята; provenance `synthetic source and claim`, `externalCalls=0`. Затем повторил запуск дважды: оба ответа HTTP 200 с тем же fixture-результатом. |
+| Набор fixture-тестов | Нажал «Запустить 3 теста»: `POST /tests` — HTTP 200 / `PASS`; `supported`, `mismatch`, `unknown-source` каждый получил PASS по своему ожидаемому статусу. |
+| Неверная цитата / неподтверждённое число | На synthetic источнике проверил два claims: цитата про 12% присутствует, цитата про 19% отсутствует. HTTP 200, доменный статус `partial`, точное подтверждение 1 из 2, одно предупреждение; общий oracle `NOT_EVALUATED`, поскольку это ручной ввод. |
+| Source ID неизвестен | Подготовленный `unknown-source` вернул `unsupported`, `verified=false`, предупреждение, что цитата не прошла точную сверку. HTTP 200, suite-ожидание PASS. Живой UI при этом показал старую формулировку «PDF-фрагмент», хотя файл `evidence_core.py` на диске уже содержит нейтральное «фрагмент источника»; см. runtime-расхождение ниже. |
+| Непустое неразрешимое утверждение | `source_id=missing` с длинной цитатой, которой нет в synthetic source, дало `unsupported`, не `unclear`. |
+| Пустой ввод | В «Своих данных» оставил оба поля пустыми; затем отдельно подал `claims=[]` и `sources=[]`. Оба Fixture запуска ответили HTTP 200 и молча использовали встроенные demo claim/source: `data.status=supported`, validation `NOT_EVALUATED`. Пустой ввод не сформировал `unclear` и не был отклонён. Это воспроизводимое поведение адаптера, а не утверждение пользователя. |
+| Число расходится с точной цитатой | Synthetic claim говорил о 19% годовых, его точная цитата из synthetic source — о 12%. Интерфейс вернул `data.status=supported`, `Цитата найдена`, `verified=true`; это подтверждает точное вхождение цитаты, а не числа из claim. Смысловая/числовая проверка без External AI отсутствует. |
+
+Все GET `health`/`scenarios`, fixture POST `run` и `tests` видны в сетевом журнале только на localhost. Пустой запрос не вызывает traceback; внешнего origin и provider request не было. При `partial` с двумя утверждениями, ссылающимися на один и тот же `source_id`, Chromium записал React console warning: `Encountered two children with the same key, test-1` в списке проверок; обе карточки в этой отрисовке отображались.
+
+`npm run test:module -- evidence-verification` — **exit 0**: 3 Python-теста, 3 helper-теста и все три подготовленных fixture-сценария прошли. Это не покрывает смысл и числа; ручные `partial`/numeric/empty кейсы были дополнительно прогнаны через UI.
+
+Скриншоты сделаны только на синтетических данных: [точная цитата, 1440 px](assets/08-evidence-verification-round3-supported.png) и [точная цитата при конфликтующем числе, 1440 px](assets/08-evidence-verification-round3-number-fixture.png). Ни реальные документы, ни клиентские сведения в скриншоты или отчёт не включались.
+
+### Вывод и обнаруженные проблемы
+
+1. **P2 — пустые claims превращаются в demo PASS-похожий вывод.** В Fixture пустые поля или явные `[]` незаметно заменяются встроенным synthetic claim/source, поэтому UI показывает domain `supported` при общей оценке `NOT_EVALUATED`. Ожидается адресная валидация пустого входа либо явный `unclear`; фиктивный анализ нельзя выдавать за проверку переданных данных. `unclear` сейчас недостижим всеми пользовательскими режимами.
+2. **P2 — числовое противоречие получает `supported` в exact checker.** Claim о 19% с точной цитатой о 12% считается `supported`, потому что контракт проверяет только наличие цитаты. Отдельная семантическая модель не запускалась; domain-статус и метрика должны быть однозначно подписаны как точное совпадение цитаты, а числовая верификация остаётся отдельной функцией.
+3. **P2/P3 — повторяющийся source ID даёт React key warning.** Ручной `partial` с двумя claims к одному source ID выдал warning о двух детях с ключом `test-1`. Карточки показались, но React reconciliation с неуникальными ключами ненадёжен.
+4. **Runtime divergence — живая служба показывает прежний PDF-текст.** `evidence_core.py` в текущей рабочей копии формирует нейтральное «фрагмент источника», однако свежий Chromium получил «PDF-фрагмент» для `unknown-source`. Backend не перезапускал, чтобы не прерывать совместный тестовый сервер; вероятно, процесс держит старую импортированную версию. Проверка именно текущего дискового кода проходит через `rg`; живое состояние требует повторной проверки после контролируемого перезапуска.
+
+`Fixture` подтверждён на точном совпадении, частичном результате и двух видах неподдержанного claim. `unclear` через текущие UI/API пути не подтверждён и фактически недостижим. Общий `PASS` fixture-теста означает только совпадение с ожидаемым сценарием, а `data.status=supported` не говорит о смысловой или числовой поддержке. В рамках этого раунда я код не менял и backend не перезапускал; параллельное состояние общей рабочей копии отражено отдельно владельцу основного прохода.
+
+## Результат после исправлений и перезапуска API (2026-10-22)
+
+После round-3 аудита внесены три узкие правки в адаптер/фикстуры и общий список результатов:
+
+- Пустой payload больше не получает скрытые demo claim/source. `{}` и явно заданные `claims: []`, `sources: []` возвращают доменный статус `unclear`, пустые `checks`/`verified` и provenance `empty input`. Успешный preset теперь явно передаёт собственные synthetic claim/source. В fixture manifest добавлен `empty-claims`.
+- `ResultList` добавляет индекс к ключу элемента, чтобы несколько claims с одинаковым `source_id` не вызывали React warning.
+- После контролируемого перезапуска backend запущен заново в Chromium сценарий `unknown-source`: API вернул `unsupported` / validation `PASS`; UI показал «фрагментом источника» и больше не показывал устаревшую формулировку про PDF.
+
+### Финальная браузерная проверка
+
+- В prepared `empty-claims` UI показал `unclear`, 0 проверенных утверждений и suite `PASS` по явным ожиданиям.
+- В «Своих данных» оставил оба JSON-поля пустыми: HTTP 200, доменный `unclear`, validation `NOT_EVALUATED`, provenance `empty input`, ни одного подставленного доказательства.
+- В Fixture переданы два synthetic claims с одним `source_id`: один прошёл точную проверку, второй нет; UI показал `partial`, обе строки отображены, console duplicate-key warning отсутствует.
+- Новый модульный прогон: 4 Python unit-теста, 3 общих helper-теста, 4 fixture-сценария — PASS. Общий `npm run test:all` и `npm run test:e2e:studio` также завершились кодом 0; E2E открыл все девять модулей. Мобильное сравнение Personalization в том же E2E имеет 326/326 px. Для Evidence Verification на 1440/1280/390 px горизонтального overflow нет.
+
+![Пустые входы дают unclear без скрытого demo claim](assets/08-evidence-verification-round3-empty-after-fix.png)
+
+![Несколько claims одного источника рендерятся без duplicate-key warning](assets/08-evidence-verification-round3-partial-fixed.png)
+
+**Оставшееся ограничение:** checker всё ещё доказывает только точное присутствие цитаты. Synthetic claim о 19% с точной цитатой, где сказано 12%, по-прежнему получает `supported`. Числа и смысловую применимость надо сверять отдельным явным статусом; эту семантическую функцию в этом проходе не реализовывал и внешний AI не запускал.

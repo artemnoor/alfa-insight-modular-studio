@@ -5,6 +5,7 @@
 .module-result-comparison-row strong{font-size:11px;line-height:1.4}
 .module-result-comparison-row span{min-width:0;overflow-wrap:anywhere}
 .module-result-comparison-row small{display:block;margin-top:3px;color:#76837b;font-size:10px}
+.module-result-comparison--personalization{overflow-x:auto}
 .module-result-company-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .module-result-company{min-width:0;padding:12px;border:1px solid #e7ece9;border-radius:10px;background:#fafcfb}
 .module-result-company>h4{margin:0 0 10px;color:#34483d;font-size:13px}
@@ -12,3 +13,4 @@
 .module-result-company .module-result-card p{margin-top:6px}
 .module-specific-result--business-intelligence .module-result-columns{align-items:start}
 @media(max-width:720px){.module-result-company-columns{grid-template-columns:1fr}}
+@media(max-width:720px){.module-result-comparison--personalization{overflow-x:visible}.module-result-comparison--personalization .module-result-comparison-head{display:none}.module-result-comparison--personalization .module-result-comparison-row{grid-template-columns:minmax(0,1fr);min-width:0;align-items:stretch}.module-result-comparison--personalization .module-result-comparison-row>span{padding-top:8px;border-top:1px solid #edf0ee}.module-result-comparison--personalization .module-result-comparison-row>span small{margin-top:2px}}

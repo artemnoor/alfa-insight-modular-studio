@@ -112,3 +112,49 @@ External запуск блокируется, если не выполнены o
 Исправлены связанные с этим проходом UX-дефекты: сетевые ошибки `fetch` переводятся в адресное русское сообщение в `shared/frontend/ModuleWorkbench.tsx` через `shared/frontend/moduleErrorMessage.js`; покрытие — `shared/frontend/tests/module-error-message.test.mjs`. Команда `npm run test:module -- ai-agent` теперь запускает этот общий UI-helper test. Сам API timeout оставлен отдельным сообщением с запретом повторно отправлять занятый запуск.
 
 Итог `PARTIAL`: тестируется реальный orchestration flow и локальное представление плана, но не проверяются качество Polza, расходы, ошибки внешнего провайдера или реального RAG; постоянная история Studio-запусков также не подтверждена.
+
+## Раунд 3 (2026-10-22)
+
+Проверка выполнена в новом headless Chromium context на `http://127.0.0.1:5173/studio/ai-agent`. В начале UI выбрал `External AI` (health сообщил `externalAiAvailable=true` и `externalAiRequiresManualRun=true`); до первого запуска я явно переключил режим на `Fixture`. Провайдер, другие внешние origin и live-источники не вызывались. Для локальных снимков использовались только встроенные синтетические входы Fixture.
+
+### Команды, браузер и фактические результаты
+
+`npm run test:module -- ai-agent` завершилась с exit code `0`: 2 Python unit-теста, 3 теста общего frontend error helper и 4 сценария адаптера прошли.
+
+В свежем Chromium выполнены следующие действия:
+
+| Проверка | Действие и результат |
+|---|---|
+| Доступность | Прямой маршрут `/studio/ai-agent` открыт; health, сценарии и локальные опции загрузились. Backend доступен, Local Data доступен, External AI advertised, но ручной запуск обязателен. Ошибок страницы — 0. |
+| Fixture — запуск 1 | Выбран «Пересмотр плана после проверки профиля» и нажата кнопка запуска. `POST /api/modules/ai-agent/run` ответил HTTP 200 / validation `PASS`; `executionStatus=complete`, статус заключения `unclear`, стоимость 0 ₽, `externalCalls=0`, provenance `deterministic model-response fixture`. |
+| План и исполнение | План версии 1 содержал `get_company_profile`, `get_event_facts`, `verify_evidence`. Версия 2 добавила `search_bank_research`. В результате фактически вызваны `get_company_profile`, `get_event_facts`, `search_bank_research`; `verify_evidence` помечен `skipped` с причиной: «В итоговом ответе нет утверждений, требующих семантической проверки.» UI отдельно показал запланированные и вызванные инструменты, список невыполненного шага и объяснение пропуска. |
+| Fixture — повтор | Тот же сценарий запущен повторно через UI. Второй ответ — HTTP 200 / `PASS`, с тем же набором планов, вызовов и причиной пропуска. В UI появилось сравнение с предыдущим запуском в этой сессии. |
+| Набор сценариев | Нажата кнопка «Запустить 4 теста». `POST /tests` ответил HTTP 200 / `PASS`; прошли `success` (4 проверки), `adaptive-replan` (3), `question-empty` (2), `fixture-cost` (2). |
+| Local Data | Перед запуском проверен путь чтения, после чего в UI выбраны профиль с синтетическим ID и событие архива. Ответ — HTTP 200, validation `NOT_EVALUATED`, `executionStatus=not_run`, `status=not_run`, 24 доступных поля профиля, `contentStatus=excerpt`, ноль инструментальных и внешних вызовов, `writes=none`. AI-агент в этом режиме не запускался. ID, заголовок, значения профиля и текст события в отчёт и снимки не попали. |
+| Сетевые запросы и ошибки | В Chromium не зарегистрировано запросов к внешним origin; ошибки страницы — 0. В браузере были только fixture и Local Data POST-запросы. |
+| Адаптивность | При viewport 1440, 1280 и 390 px `document.scrollWidth` совпал с шириной viewport; горизонтального переполнения нет. |
+| External AI | `NOT RUN`. После фиксации стартового режима переключился в Fixture; кнопку внешнего запуска не нажимал. |
+
+Синтетические screenshots: [1440 px — две версии плана, фактические вызовы и пропуск шага](assets/07-ai-agent-round3-fixture-desktop.png), [390 px — мобильная компоновка](assets/07-ai-agent-round3-fixture-mobile.png). Они сняты до Local Data; клиентские данные в артефакты не включались.
+
+### Фактические пути и границы проверки
+
+- `modules/07-ai-agent/frontend/ModulePage.tsx` строит сравнение `planHistory` и `toolCalls`, перечисляет `plannedTools` без вызова, показывает `planSteps.status/reason` и сворачиваемые аргументы/результаты инструментов. Общие режимы и сетевые вызовы находятся в `shared/frontend/ModuleWorkbench.tsx`.
+- API маршрутизируется через `shared/backend/modules_api.py::dispatch`; отдельные `run` и `tests` загружают `modules/07-ai-agent/backend/adapter.py`.
+- Fixture путь: `adapter.run` → `agent.run_agent` из `modules/07-ai-agent/backend/agent_orchestrator.py`. Оркестратор, планирование, изменение плана, диспетчеризация инструментов, статусы шагов и сбор trace исполняются настоящим кодом. Транспорт модели (`request_fn`), семантическая проверка (`semantic_verify_fn`) и RAG (`rag_search`) подменены в адаптере детерминированными функциями; `search_bank_research` вернул fixture/no-relevant-material результат. Значит PASS проверяет orchestration flow и интерфейс, но не live-модель, реальный поиск RAG или качество их результатов.
+- Fixture вызывает `run_agent` с `history_path` внутри `tempfile.TemporaryDirectory` и `force_refresh=True`. Оркестратор записывает run только в этот временный SQLite и каталог удаляется при выходе из `adapter.run`; рабочий `HISTORY_DB_PATH` не передан. Внутрисессионное сравнение, которое показывает UI после двух запусков, хранится в React state, оно не является сохранённой историей исследования.
+- Local Data путь: `adapter.run_local` вызывает `stage1_analyzer.load_companies` (CSV read) и `personalization.load_structured_events` (SQLite URI `mode=ro` с `PRAGMA query_only=ON`), затем возвращает доступность входных данных с `writes=none`. Он не вызывает `agent.run_agent`, `_save_run` или запись job/history; `NOT_EVALUATED` ожидаем, так как агентного вывода нет.
+- Внешний путь не исполнялся. По коду `adapter.run_external` использует постоянный `agent.HISTORY_DB_PATH`, передаёт выбранные данные в `agent.run_agent`, а перед ним вызывает `business_graph.ensure_database()`. Поэтому эта проверка не подтверждает внешние инструменты/ответы/стоимость и не проверяет возможную запись или инициализацию рабочего графа при внешнем запуске.
+
+### Статус раунда
+
+| Область | Статус | Основание |
+|---|---|---|
+| Isolated tests и fixture suite | `PASS` | Команда завершилась с кодом 0; четыре подготовленных сценария прошли. |
+| Живой fixture через UI | `PASS` | Два запуска adaptive-replan дали HTTP 200 и validation PASS. |
+| План против фактических вызовов | `PASS` для отображения | UI различает четыре инструмента финального плана и три фактических вызова; пропуск `verify_evidence` снабжён причиной. Инструментальные ответы синтетические. |
+| Local Data | `PARTIAL` | Реальный профиль и событие безопасно прочитаны, но агент и план не запускаются. |
+| External AI / реальный RAG | `NOT RUN` | Внешний провайдер не запускался; fixture подменяет транспорт и RAG. |
+| Десктоп и мобильная ширина | `PASS` | Нет горизонтального переполнения на 1440, 1280 и 390 px. |
+
+Код модуля в этом раунде не менялся. CSV, исходный SQLite, постоянная история исследований и рабочие job-записи не менялись.

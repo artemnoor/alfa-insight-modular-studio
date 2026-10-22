@@ -72,3 +72,35 @@ Opened `/studio/bank-research` in a new Chromium context and interacted through 
 `npm run test:module -- bank-research` exited 0: 6 Python tests and all 3 fixture scenarios passed. Fresh screenshots show synthetic Fixture results only: [1440 px](assets/06-bank-research-round2-desktop.png), [390 px](assets/06-bank-research-round2-mobile.png). No screenshot was taken in Local Data mode.
 
 **Fresh status:** Fixture `PASS`; Local BM25 retrieval `PARTIAL` because the search executed read-only but has no independent semantic relevance labels and returned `NOT_EVALUATED`; empty-query error `PASS`; External AI `NOT RUN`. `modules/06-bank-research/backend/stage2_rag.py` remains the sole owner of BM25 retrieval, with adapter/UI/API at `adapter.py`, `ModulePage.tsx`, and shared contract v1. Fixture builds an in-memory synthetic index; Local Data reads the configured knowledge index without writes; External AI remains a separate manual path that can send the query and up to five retrieved fragments. Missing-index recovery, semantic entailment and the document catalog/open-source flow remain unverified/open as described above.
+
+## Раунд 3 — повторный Chromium-проход (2026-10-22)
+
+Свежая headed-сессия Chromium (`r3bank`) открыла `/studio/bank-research` на `127.0.0.1:5173`; локальный API на `127.0.0.1:8097/api/health` ответил HTTP 200. При первом открытии был выбран `External AI — по выбору`; интерфейс явно предупреждал о ручной отправке запроса и до нажатия кнопки ничего не отправлял. Для тестирования переключился на Fixture. Внешний AI не запускал.
+
+### Проверенный путь данных и владелец
+
+- `modules/06-bank-research/backend/stage2_rag.py` — единственный владелец токенизации, русского стемминга, BM25-индекса, порога совпадений и дедупликации страниц. Старый `drive_data_analysis_2026-10-20/stage2_rag.py` — compatibility-wrapper к этому файлу, второй копии retrieval-алгоритма нет.
+- `modules/06-bank-research/backend/adapter.py::run` строит BM25-индекс только из переданных фикстурных документов и вызывает общий `stage2_rag.retrieve`; результат маркируется `synthetic documents`, `externalCalls=0`.
+- `adapter.py::run_local` передаёт запрос в тот же `stage2_rag.retrieve`. Без тестового `index_path` retrieval использует обычный `load_index()`/`load_index_from_path(KB_PATH)` из `drive_data_analysis_2026-10-20/stage2_kb.json`. Это чтение локального JSON и кэширование индекса в памяти; адаптер не присваивает `stage2_rag.load_index`, не меняет путь/содержимое индекса и не пишет в него. Изолированный unit-тест подменяет путь только временным JSON из `TemporaryDirectory`.
+- `shared/backend/modules_api.py` направляет `mode=fixture` в `adapter.run`, `local_data` в `adapter.run_local`, а `external_ai` отдельно в `adapter.run_external`. Внешний путь вызывает Polza только после отдельного действия; при наличии совпадений передаёт поисковый запрос и до пяти фрагментов. В этом раунде такого вызова не было.
+
+### Действия и свежие результаты
+
+| Проверка | Взаимодействие / HTTP | Результат |
+|---|---|---|
+| Доступность | `GET /api/modules/bank-research/health`, `/scenarios`, `/api/modules` через Vite proxy. | Все перечисленные ответы HTTP 200; UI показал Backend: доступен. |
+| Fixture: успешный поиск и повтор | Дважды нажал «Запустить алгоритм» на сценарии «Поиск инфраструктурного кредита». `POST /api/modules/bank-research/run` №125 и №126. | Оба HTTP 200 / `PASS`, по одной synthetic-странице с BM25-оценкой; provenance `synthetic documents`, `externalCalls=0`. |
+| Fixture suite | Нажал «Запустить 3 теста». `POST /tests` №127. | HTTP 200 / `PASS`: «Поиск инфраструктурного кредита», «Пустой запрос», «Нет подходящих документов». |
+| Пустой fixture-запрос | Выбрал «Пустой запрос» и запустил сценарий. `POST /run` №128. | HTTP 200 / `PASS`; `status=no_query_terms`, `matches=[]`, provenance synthetic и `externalCalls=0`. |
+| Local Data: read-only retrieval и повтор | Переключил режим на Local Data; запустил стандартный запрос дважды. `POST /run` №129 и №130. | Оба HTTP 200; на странице по 5 карточек, индикатор валидации `NOT_EVALUATED`, provenance в UI `local bank knowledge index (read only)`, внешних вызовов 0. Карточки не содержат ссылки «Открыть документ». Текст, названия и выдержки реальных документов не копировались в отчёт или скриншоты. |
+| Ошибка ввода в Local Data | Очистил поле запроса и нажал запуск. `POST /run` №131. | HTTP 400; UI показал «Введите поисковый запрос.», без traceback или page exception. В Chromium виден ожидаемый failed-resource 400; JavaScript page error не наблюдался. |
+| Восстановление fixture | Вернулся в Fixture, снова запустил успешный сценарий (`POST /run` №132). | HTTP 200 / `PASS`; результат снова synthetic. |
+| Мобильная ширина | После успешного fixture-результата установил viewport 390×844. | `document.documentElement.scrollWidth=375`, горизонтального overflow нет; скриншот содержит только synthetic-данные. |
+
+Команда `npm run test:module -- bank-research` — **exit 0**: 6 Python-тестов прошли, все 3 подготовленных сценария (`success`, `empty`, `irrelevant`) дали PASS. Unit-тесты отдельно подтверждают, что fixture не заменяет глобальный loader при конкурентном вызове и что Local Data адаптер читает временный индекс из тестовой папки. В браузере проверены также повторные поиски и текст ошибки.
+
+Скриншоты сняты только на фикстурном сценарии: [desktop, 1440×960](assets/06-bank-research-round3-fixture.png) и [mobile, 390×844](assets/06-bank-research-round3-mobile-fixture.png). Реальные банковские документы не выгружались в артефакты; Local Data результат проверялся в живом интерфейсе только по HTTP-статусу, числу результатов, validation status и provenance. Сетевой журнал не содержит запросов к Polza.
+
+### Вывод раунда
+
+Кодовой дефект в проверенном пути не обнаружен, изменений реализации не делал. Fixture действительно использует BM25 по подготовленному индексу, а Local Data — BM25 по настроенному локальному индексу без записи или замены loader. Поиск и повтор работают, empty query корректно отклоняется. Статус Local Data остаётся `PARTIAL`: пять лексических совпадений не имеют независимого эталона семантической релевантности; UI не предоставляет каталог документов и ссылку для проверки соседнего контекста. Это подтверждённые ограничения, ранее описанные в разделе дефектов, а не результат внешней AI-проверки.

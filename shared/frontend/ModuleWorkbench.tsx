@@ -111,6 +111,10 @@ export function ModuleWorkbench({ spec }: Props) {
 
   useEffect(() => {
     if (!spec.fields.some(field => field.optionsSource)) return
+    if (!localDataAvailable) {
+      setDynamicOptions({})
+      return
+    }
     const query = new URLSearchParams({
       company_query: optionSearch.company_id || '',
       event_query: optionSearch.event_id || '',
@@ -120,7 +124,7 @@ export function ModuleWorkbench({ spec }: Props) {
       for (const item of body.options || []) values[item.name] = item.options || []
       setDynamicOptions(values)
     }).catch(() => setDynamicOptions({}))
-  }, [spec.id, spec.fields, optionSearch])
+  }, [spec.id, spec.fields, optionSearch, localDataAvailable])
 
   const selectedScenario = useMemo(() => scenarios.find(row => row.id === selected), [scenarios, selected])
   const isLocalField = (field: ModuleField) => field.name === 'limit' || field.name === 'company_id' || (spec.localCompanyIds && field.name === 'company_ids') || Boolean(spec.localFields?.includes(field.name))
@@ -215,7 +219,7 @@ export function ModuleWorkbench({ spec }: Props) {
           const sourceOptions = dynamicOptions[field.optionsSource || ''] || []
           const selectedOption = field.optionsSource && visibleValue && !sourceOptions.some(option => option.value === visibleValue) ? [{ value: visibleValue, label: visibleValue }] : []
           const options = [...(field.options || []), ...sourceOptions, ...selectedOption]
-          return <label className="module-control" key={field.name}><span>{field.label}</span>{field.kind === 'select' && field.optionsSource && <input type="search" value={optionSearch[field.optionsSource] || ''} placeholder={field.optionsSource === 'company_id' ? 'Поиск по ID компании…' : 'Поиск по названию или ID события…'} onChange={event => setOptionSearch(previous => ({ ...previous, [field.optionsSource!]: event.target.value }))} />}{field.kind === 'select' ? <select value={visibleValue} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))}>{field.optionsSource && <option value="">Выберите из найденных локальных данных…</option>}{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : field.kind === 'json' || (field.rows && field.rows > 1) ? <textarea rows={field.rows || 5} value={visibleValue} placeholder={field.placeholder} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))} /> : <input type={field.kind === 'number' ? 'number' : 'text'} min={field.min} max={field.max} step={field.kind === 'number' ? 'any' : undefined} value={visibleValue} placeholder={field.placeholder} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))} />}{field.helperText && <small>{field.helperText}</small>}</label>
+          return <label className="module-control" key={field.name}><span>{field.label}</span>{field.kind === 'select' && field.optionsSource && <input type="search" value={optionSearch[field.optionsSource] || ''} disabled={!localDataAvailable} placeholder={field.optionsSource === 'company_id' ? 'Поиск по ID компании…' : 'Поиск по названию или ID события…'} onChange={event => setOptionSearch(previous => ({ ...previous, [field.optionsSource!]: event.target.value }))} />}{field.kind === 'select' ? <select value={visibleValue} disabled={Boolean(field.optionsSource && !localDataAvailable)} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))}>{field.optionsSource && <option value="">Выберите из найденных локальных данных…</option>}{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : field.kind === 'json' || (field.rows && field.rows > 1) ? <textarea rows={field.rows || 5} value={visibleValue} placeholder={field.placeholder} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))} /> : <input type={field.kind === 'number' ? 'number' : 'text'} min={field.min} max={field.max} step={field.kind === 'number' ? 'any' : undefined} value={visibleValue} placeholder={field.placeholder} onChange={event => setFields(previous => ({ ...previous, [field.name]: event.target.value }))} />}{field.helperText && <small>{field.helperText}</small>}{field.optionsSource && !localDataAvailable && <small>Подключённые локальные профили и архив недоступны; Fixture использует подготовленные данные.</small>}</label>
         })}
         {mode === 'live_feed' && <p className="module-result-inline-note">По нажатию будет выполнен один GET-запрос к выбранной публичной RSS-ленте. Клиентские данные не отправляются; публикации и журнал сохраняются в локальной базе этого рабочего клона.</p>}
         <div className="module-actions"><button className="module-primary" disabled={Boolean(busy) || backend !== 'ready'}>{busy === 'run' ? 'Выполняю…' : mode === 'live_feed' ? 'Собрать выбранную RSS-ленту' : mode === 'external_ai' ? 'Запустить Polza AI-анализ' : mode === 'local_data' ? (spec.localRunLabel || 'Запустить алгоритм') : 'Запустить алгоритм'}</button><button className="module-secondary" type="button" disabled={Boolean(busy) || backend !== 'ready'} onClick={testAll}>{busy === 'tests' ? 'Проверяю…' : `Запустить ${scenarios.length} теста`}</button></div>

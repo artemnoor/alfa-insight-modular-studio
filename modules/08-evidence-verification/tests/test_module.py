@@ -10,12 +10,20 @@ class IsolatedFixtureTests(unittest.TestCase):
     def test_adapter_unit(self):
         result = _load("evidence-verification").run({})
         self.assertIsInstance(result, dict)
-        self.assertTrue(result)
+        self.assertEqual(result["status"], "unclear")
+        self.assertEqual(result["checks"], [])
+        self.assertEqual(result["provenance"]["kind"], "empty input")
+
+    def test_explicit_empty_claims_are_not_replaced_by_demo(self):
+        result = _load("evidence-verification").run({"claims": [], "sources": []})
+        self.assertEqual(result["status"], "unclear")
+        self.assertEqual(result["checks"], [])
+        self.assertEqual(result["verified"], [])
 
     def test_prepared_scenarios(self):
         status, result = dispatch("POST", "/api/modules/evidence-verification/tests", {})
         self.assertEqual(status, 200)
-        self.assertEqual(len(result["scenarios"]), 3)
+        self.assertEqual(len(result["scenarios"]), 4)
         self.assertEqual(result["status"], "PASS", result)
 
     def test_warning_does_not_assume_a_pdf_source(self):

@@ -30,7 +30,7 @@ export function ResultTag({ children, tone = 'neutral' }: { children: ReactNode;
 
 export function ResultList({ items, empty = 'Подходящих данных нет.', renderItem }: { items: unknown; empty?: string; renderItem: (item: ResultData, index: number) => ReactNode }) {
   const rows = asRows(items)
-  return rows.length ? <div className="module-result-list">{rows.map((item, index) => <div key={String(item.id ?? item.event_id ?? item.source_id ?? index)}>{renderItem(item, index)}</div>)}</div> : <p className="module-result-empty">{empty}</p>
+  return rows.length ? <div className="module-result-list">{rows.map((item, index) => <div key={`${String(item.id ?? item.event_id ?? item.source_id ?? 'item')}-${index}`}>{renderItem(item, index)}</div>)}</div> : <p className="module-result-empty">{empty}</p>
 }
 
 export function ResultTextList({ items, empty = 'Нет отдельных пунктов.' }: { items: unknown; empty?: string }) {

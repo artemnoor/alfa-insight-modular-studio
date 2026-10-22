@@ -1,6 +1,35 @@
 # Modular Studio test report
 
-## Latest verification — second round, 2026-10-22
+## Latest verification — third round, 2026-10-22
+
+**Verdict:** all nine Studio routes were opened in Chromium and their real module algorithms were run on prepared synthetic fixtures. Every module suite passed; `npm run test:all` and the final `npm run test:e2e:studio` exited 0. E2E saw all nine Studio cards, 30 prepared scenarios, no page/console errors, and no horizontal overflow at 1440, 1280, or 390 px. The client product route itself opened; its real-company subcase is `PARTIAL` because the run did not receive an explicit company ID. This verifies routes and deterministic workflows, not the semantic quality of every algorithm or paid AI workflow.
+
+| Check | Status | Evidence |
+|---|---|---|
+| `npm run test:all` | PASS | Production TypeScript/Vite build; 8 root Python tests; 94 analytics tests; T08/T09/T10 and pipeline suites; all nine isolated module suites. Evidence Verification now has 4 Python tests and 4 fixture scenarios. |
+| `npm run test:e2e:studio` | PASS with product PARTIAL | Chromium opened all nine Studio routes, ran each algorithm, suite, and repeat; Evidence Verification also checked empty claims and a repeated-source partial result. Company/event selectors disable cleanly when local data is unavailable. No console errors; all 9 routes fit 1440/1280 and the mobile checks fit 390 px. Product company/feed path requires an explicit E2E company ID. |
+| Per-module readiness | PASS for Fixture execution; PARTIAL overall | Each route has a specialized result and its own scenarios. Exact limitations and statuses are recorded in the nine [module reports](docs/module-reports/README.md). |
+| Live News Intelligence / Polza | PARTIAL | One final authorized manual run used a synthetic article and a near-identical synthetic T09 candidate. Provider reported 15 calls, 14,201 input tokens, 10,391 output tokens, and 0.9054272 ₽. T08 classified the item as `banking`, found no SENTiVENT match, and had incomplete entity extraction; the quote was exact but its semantic support was rejected. T09 returned SAME/APPEND_TO_EVENT against the near-duplicate candidate (lexical similarity 0.552). This confirms the live path and metered response, not answer quality. |
+| Other External AI workflows | NOT RUN | No new paid calls were made for modules 03–09, product chat, or deep research. They remain manual-only. |
+| Cumulative provider spend | UNKNOWN / threshold risk | The latest run stayed below its per-run 1 ₽ threshold. Earlier priced attempts total approximately 1.9992151 ₽; one timeout has no reported final cost, so cumulative actual spend cannot be verified against the 5 ₽ aggregate ceiling. A prior request exceeded its own post-response 1 ₽ threshold. No more external requests were made. |
+| Local data and product workflow | PARTIAL | The server was restored with the existing read-only data root and manual Polza opt-in. Fixture E2E made no provider calls. Valid product workspace/event/history endpoints were not re-run because they can update clone-local ranking/history SQLite metadata; the explicit product E2E subcase remains partial. Earlier Local Data/RAG findings and exclusions are recorded per module. |
+| Data integrity | PASS for this round | No source CSV or source SQLite was changed or added to Git. All newly committed screenshots contain synthetic Fixture inputs only. |
+
+### Fixes made and verified
+
+- Personalization comparison now stacks on mobile with company labels; the comparison content width equals its 326 px container at 390 px viewport.
+- Evidence Verification no longer invents a demo claim for blank input. Empty claims produce `unclear` and zero checks; the fixture includes an explicit `empty-claims` case.
+- Shared result lists use unique React keys when several claims refer to the same source ID. Chromium reported no duplicate-key warning on the repeated-source case.
+- Company/event option requests are skipped until local data is available; unavailable selectors are disabled and explain why. This removed four initial 503 responses in no-data mode.
+- The live Evidence Verification response now uses the format-neutral “фрагмент источника” wording after a controlled API restart.
+
+### Remaining limitations
+
+The News Intelligence spend threshold is evaluated after a provider response, so it cannot guarantee a hard cap. The aggregate cost of prior calls is partly unknown. Evidence Verification's deterministic status means exact quote presence only: the observed 19%-claim / 12%-quote contradiction still returned `supported`; numeric and semantic reconciliation remain open. Personalization and RAG lack independent gold labels. Impact Analysis has no hard preflight spend reservation and its external route does not run the complete canonical RAG/evidence pipeline. The Alfa product fixture does not provide a synthetic profile/feed, and its chat/deep-research flows were not live-tested in this round. See the per-module reports for exact steps and evidence.
+
+The preceding second-round section is retained below as historical context.
+
+## Verification — second round, 2026-10-22
 
 **Verdict:** all nine Studio modules pass their deterministic Fixture workflows, module test suites and Chromium route checks. The full production build and `npm run test:all` pass. Manual read-only product browsing also confirmed the company picker, feeds, event view, sources/profile disclosures, company switching, refresh persistence and mobile width. This does not certify model accuracy, RAG relevance or the product's paid chat/deep-research path.
 

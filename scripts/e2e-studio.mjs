@@ -42,6 +42,12 @@ try {
     const heading = (await page.locator('.module-heading h1').innerText()).trim()
     const backendStatus = await page.locator('.module-status-row').innerText()
     if (!backendStatus.includes('доступен')) throw new Error(`${slug}: backend недоступен: ${backendStatus}`)
+    if (['impact-analysis', 'ai-agent'].includes(slug) && !productHealth.productDataAvailable) {
+      const profileSelectors = page.locator('.module-control select')
+      const disabledSelectors = await profileSelectors.evaluateAll(nodes => nodes.filter(node => node.disabled).length)
+      if (disabledSelectors < 2) throw new Error(`${slug}: inputs для отсутствующих локальных профилей должны быть отключены.`)
+      await page.getByText('Подключённые локальные профили и архив недоступны; Fixture использует подготовленные данные.').first().waitFor()
+    }
     // Tests must stay free and deterministic even when External AI is enabled in user env.
     await page.locator('.module-mode select').selectOption('fixture')
     if (slug === 'personalization') {
@@ -66,11 +72,36 @@ try {
     const suiteStatus = await page.locator('.module-test-list .module-badge').innerText()
     if (suiteStatus !== 'PASS') throw new Error(`${slug}: набор сценариев ${suiteStatus}`)
     const testScenarioCount = await page.locator('.module-test-list .module-test').count()
-    const expectedTestScenarioCount = ['ai-agent', 'news-intelligence'].includes(slug) ? 4 : 3
+    const expectedTestScenarioCount = ['ai-agent', 'news-intelligence', 'evidence-verification'].includes(slug) ? 4 : 3
     if (testScenarioCount !== expectedTestScenarioCount) throw new Error(`${slug}: ожидалось ${expectedTestScenarioCount} подготовленных тестов, получено ${testScenarioCount}`)
     await page.getByRole('button', { name: 'Запустить алгоритм' }).click()
     await page.locator('.module-specific-result, .module-highlights').waitFor({ timeout: 20000 })
     if (slug === 'ai-agent') await page.getByText(/Сравнение запусков в этой сессии/).waitFor({ timeout: 5000 })
+    if (slug === 'evidence-verification') {
+      const scenarioSelect = page.locator('.module-control select').first()
+      await scenarioSelect.selectOption('empty-claims')
+      await page.getByRole('button', { name: 'Запустить алгоритм' }).click()
+      await page.locator('.module-specific-result').waitFor({ timeout: 20000 })
+      const emptyScenario = await page.locator('.module-results').innerText()
+      if (!emptyScenario.includes('unclear') || !emptyScenario.includes('Утверждения не переданы.')) throw new Error('Evidence Verification заменил пустой список утверждений содержимым по умолчанию.')
+      await scenarioSelect.selectOption('')
+      await page.getByRole('button', { name: 'Запустить алгоритм' }).click()
+      await page.locator('.module-specific-result').waitFor({ timeout: 20000 })
+      const blankInput = await page.locator('.module-results').innerText()
+      const blankBadge = await page.locator('.module-results .module-badge').first().innerText()
+      if (!blankInput.includes('unclear') || blankBadge !== 'NOT_EVALUATED') throw new Error(`Пустые пользовательские поля Evidence Verification получили неожиданный вывод: ${blankBadge}`)
+      await page.screenshot({ path: path.join(out, 'evidence-verification-empty-input.png'), fullPage: true })
+      await page.getByLabel('Утверждения и цитаты (JSON)').fill(JSON.stringify([
+        { source_id: 'fixture-source', quote: 'The synthetic source confirms this exact infrastructure claim.', relation_to_analysis: 'First fixture claim' },
+        { source_id: 'fixture-source', quote: 'This second synthetic quotation is absent from the source.', relation_to_analysis: 'Second fixture claim' },
+      ]))
+      await page.getByLabel('Источники (JSON)').fill(JSON.stringify([{ chunk_id: 'fixture-source', text: 'The synthetic source confirms this exact infrastructure claim.' }]))
+      await page.getByRole('button', { name: 'Запустить алгоритм' }).click()
+      await page.locator('.module-specific-result').waitFor({ timeout: 20000 })
+      const duplicateSourceResult = await page.locator('.module-results').innerText()
+      if (!duplicateSourceResult.includes('partial') || errors.some(error => String(error).includes('same key'))) throw new Error('Повторяющийся source_id не отобразился корректно или React сообщил о дублирующемся ключе.')
+      await page.screenshot({ path: path.join(out, 'evidence-verification-partial.png'), fullPage: true })
+    }
     if (slug === 'news-intelligence') {
       await page.locator('.module-control select').first().selectOption('')
       await page.getByLabel('Текст публикации').fill('Слишком коротко')
@@ -198,6 +229,8 @@ try {
   await mobile.locator('.module-specific-result').waitFor({ timeout: 20000 })
   const mobileResult = await mobile.locator('.module-results').innerText()
   if (!mobileResult.includes('U_BUILD') || !mobileResult.includes('U_FINANCE')) throw new Error('Мобильная персонализация не отобразила обе компании.')
+  const comparisonWidth = await mobile.locator('.module-result-comparison--personalization').evaluate(node => ({ viewport: node.clientWidth, content: node.scrollWidth }))
+  if (comparisonWidth.content > comparisonWidth.viewport) throw new Error(`Мобильное сравнение требует горизонтальной прокрутки: ${JSON.stringify(comparisonWidth)}`)
   await mobile.screenshot({ path: path.join(out,'personalization-mobile-390.png'), fullPage: true })
   const moduleMobileWidth = await mobile.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
   if (moduleMobileWidth.content > moduleMobileWidth.viewport) throw new Error(`Мобильная персонализация переполняет ширину: ${JSON.stringify(moduleMobileWidth)}`)
@@ -211,7 +244,7 @@ try {
     if (productMobileWidth.content > productMobileWidth.viewport) throw new Error(`Мобильный клиентский продукт переполняет ширину: ${JSON.stringify(productMobileWidth)}`)
     await mobile.screenshot({ path: path.join(out,'product-mobile-390.png'), fullPage: true })
   }
-  console.log(JSON.stringify({ status: 'PASS', cards, results, mobileWidth, newsIntelligenceMobileWidth, moduleMobileWidth, productMobileWidth, errors, screenshots: out }, null, 2))
+  console.log(JSON.stringify({ status: 'PASS', cards, results, mobileWidth, newsIntelligenceMobileWidth, moduleMobileWidth, comparisonWidth, productMobileWidth, errors, screenshots: out }, null, 2))
   if (errors.length) process.exitCode = 1
 } finally {
   await browser.close()
