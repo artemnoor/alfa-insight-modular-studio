@@ -1,0 +1,5 @@
+# Runtime dependencies for the Studio and product API.
+pandas
+requests
+nltk
+rank-bm25

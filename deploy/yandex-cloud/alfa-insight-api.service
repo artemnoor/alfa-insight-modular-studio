@@ -1,0 +1,24 @@
+[Unit]
+Description=Alfa Insight Studio API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yc-user
+Group=yc-user
+WorkingDirectory=/home/yc-user/deploy/alfa-insight/app
+Environment=ALFA_INSIGHT_API_PORT=8097
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/yc-user/deploy/alfa-insight/venv/bin/python /home/yc-user/deploy/alfa-insight/app/modules/09-alfa-product/backend/react_api.py
+Restart=on-failure
+RestartSec=3
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/yc-user/deploy/alfa-insight/app/data
+
+[Install]
+WantedBy=multi-user.target
